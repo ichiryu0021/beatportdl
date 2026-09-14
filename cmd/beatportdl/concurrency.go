@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"runtime/debug"
 	"sync"
 )
 
@@ -14,7 +15,7 @@ func (app *application) globalWorker(fn func()) {
 		defer app.semRelease(app.globalSem)
 		defer func() {
 			if err := recover(); err != nil {
-				fmt.Printf(fmt.Errorf("%s", err).Error())
+				fmt.Printf("panic recovered: %v\n%s\n", err, debug.Stack())
 			}
 		}()
 		fn()
@@ -37,7 +38,7 @@ func (app *application) downloadWorker(wg *sync.WaitGroup, fn func()) {
 
 		defer func() {
 			if err := recover(); err != nil {
-				fmt.Printf(fmt.Errorf("%s", err).Error())
+				fmt.Printf("panic recovered: %v\n%s\n", err, debug.Stack())
 			}
 		}()
 		fn()

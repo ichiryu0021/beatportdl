@@ -20,8 +20,27 @@ func (app *application) errorLogWrapper(url, step string, err error) {
 	app.LogError(fmt.Sprintf("[%s] %s", url, step), err)
 }
 
+// publishUrlError 记录错误日志并把 download.error 事件推给 GUI（目录创建
+// 失败、Access denied 等都会在这里被前端看到）。
+func (app *application) publishUrlError(url, step string, err error) {
+	app.errorLogWrapper(url, step, err)
+	app.publishDownload("download.error", url, "",
+		map[string]interface{}{"error": step + ": " + err.Error()})
+}
+
 func (app *application) infoLogWrapper(url, message string) {
 	app.LogInfo(fmt.Sprintf("[%s] %s", url, message))
+}
+
+// publishDownload streams a download.* event to the GUI (no-op in CLI mode).
+// url 用 track 的商店页 URL 作键，与 getLatest/search 返回的 url 一致，
+// 前端下载列表按它定位行。
+func (app *application) publishDownload(event, url, title string, extra map[string]interface{}) {
+	payload := map[string]interface{}{"event": event, "url": url, "title": title}
+	for k, v := range extra {
+		payload[k] = v
+	}
+	app.PublishProgress(payload)
 }
 
 func (app *application) createDirectory(baseDir string, subDir ...string) (string, error) {
@@ -124,7 +143,10 @@ var (
 	ErrTrackFileExists = errors.New("file already exists")
 )
 
-func (app *application) saveTrack(track *beatport.Track, directory string, quality string) (string, error) {
+func (app *application) saveTrack(track *beatport.Track, directory string, quality string, eventURL string) (string, error) {
+	if eventURL == "" {
+		eventURL = track.StoreUrl()
+	}
 	var fileExtension string
 	var displayQuality string
 
@@ -212,7 +234,15 @@ func (app *application) saveTrack(track *beatport.Track, directory string, quali
 	}
 
 	if download != nil {
-		if err := app.downloadFile(download.Location, filePath, prefix); err != nil {
+		title := infoDisplay
+		if err := app.downloadFileProgress(download.Location, filePath, prefix, func(received, total int64) {
+			pct := 0
+			if total > 0 {
+				pct = int(received * 100 / total)
+			}
+			app.publishDownload("download.progress", eventURL, title,
+				map[string]interface{}{"percent": pct, "received": received, "total": total})
+		}); err != nil {
 			os.Remove(filePath)
 			return "", err
 		}
@@ -234,6 +264,21 @@ func (app *application) saveTrack(track *beatport.Track, directory string, quali
 
 	if !app.config.ShowProgress {
 		fmt.Printf("Finished downloading %s\n", infoDisplay)
+	}
+
+	// Integrity verification: when enabled, confirm the downloaded file is
+	// decodable as audio with a positive sample rate (decode check is the
+	// strongest completeness guarantee and works for both direct downloads
+	// and HLS-remuxed m4a where Content-Length is unknown). On failure the
+	// partial file is removed and the error is propagated.
+	if app.checker != nil && app.config.VerifyIntegrity {
+		result := app.checker.VerifyAudio(filePath)
+		if !result.Valid {
+			app.errorLogWrapper(track.StoreUrl(), "integrity check", fmt.Errorf("%s", result.Error))
+			os.Remove(filePath)
+			return "", fmt.Errorf("integrity check failed: %s", result.Error)
+		}
+		app.infoLogWrapper(track.StoreUrl(), fmt.Sprintf("verified: %d bytes, %d Hz", result.ActualBytes, result.SampleRate))
 	}
 
 	return filePath, nil
@@ -382,14 +427,52 @@ func (app *application) tagTrack(location string, track *beatport.Track, coverPa
 	return nil
 }
 
-func (app *application) handleTrack(track *beatport.Track, downloadsDir string, coverPath string) error {
-	location, err := app.saveTrack(track, downloadsDir, app.config.Quality)
+// handleTrack 处理单曲下载全流程。sourceURL 是用户提交下载时使用的 URL
+// （可能是 api.beatport.com 形式，与 track.StoreUrl() 的 www 形式不同）；
+// SSE 事件统一用它作键，保证前端预登记的下载行能正确收到状态更新。
+// 专辑/歌单子曲目没有对应的提交 URL，传空串则回退为 StoreUrl()。
+func (app *application) handleTrack(track *beatport.Track, downloadsDir string, coverPath string, sourceURL string) error {
+	eventURL := sourceURL
+	if eventURL == "" {
+		eventURL = track.StoreUrl()
+	}
+	title := fmt.Sprintf("%s (%s)", track.Name.String(), track.MixName.String())
+	app.publishDownload("download.started", eventURL, title, nil)
+
+	location, err := app.saveTrack(track, downloadsDir, app.config.Quality, eventURL)
 	if err != nil {
+		app.publishDownload("download.error", eventURL, title,
+			map[string]interface{}{"error": err.Error()})
 		return fmt.Errorf("save track: %v", err)
 	}
-	if err = app.tagTrack(location, track, coverPath); err != nil && location != "" {
+	// saveTrack returns ("", nil) only when TrackExists=="skip" and the file
+	// already exists on disk. Tell the GUI it was skipped and stop here: no
+	// tagging, genre filing or download.done with an empty path. This covers
+	// every caller (single track, release, playlist, chart, label, artist),
+	// which all funnel tracks through handleTrack.
+	if location == "" {
+		app.publishDownload("download.skipped", eventURL, title,
+			map[string]interface{}{"reason": "exists"})
+		return nil
+	}
+	if err = app.tagTrack(location, track, coverPath); err != nil {
+		app.publishDownload("download.error", eventURL, title,
+			map[string]interface{}{"error": err.Error()})
 		return fmt.Errorf("tag track: %v", err)
 	}
+	// Genre-based filing: when the archiver is configured (sort_by_genre), move
+	// the finished file into <downloads>/<genre>/. The track carries its own
+	// genre so this works even though releases have no genre field.
+	if app.archiver != nil {
+		moved, err := app.archiver.File(track, location)
+		if err != nil {
+			app.errorLogWrapper(eventURL, "genre filing", err)
+		} else if moved != location {
+			app.infoLogWrapper(eventURL, "filed into genre: "+filepath.Base(filepath.Dir(moved)))
+		}
+	}
+	app.publishDownload("download.done", eventURL, title,
+		map[string]interface{}{"path": location})
 	return nil
 }
 
@@ -467,7 +550,7 @@ func (app *application) handleTrackLink(link *beatport.Link) {
 
 	downloadsDir, err := app.setupDownloadsDirectory(app.config.DownloadsDirectory, release)
 	if err != nil {
-		app.errorLogWrapper(link.Original, "setup downloads directory", err)
+	app.publishUrlError(link.Original, "setup downloads directory", err)
 		return
 	}
 
@@ -481,7 +564,7 @@ func (app *application) handleTrackLink(link *beatport.Link) {
 			}
 		}
 
-		if err := app.handleTrack(track, downloadsDir, cover); err != nil {
+		if err := app.handleTrack(track, downloadsDir, cover, link.Original); err != nil {
 			app.errorLogWrapper(link.Original, "handle track", err)
 			os.Remove(cover)
 			return
@@ -506,7 +589,7 @@ func (app *application) handleReleaseLink(link *beatport.Link) {
 
 	downloadsDir, err := app.setupDownloadsDirectory(app.config.DownloadsDirectory, release)
 	if err != nil {
-		app.errorLogWrapper(link.Original, "setup downloads directory", err)
+	app.publishUrlError(link.Original, "setup downloads directory", err)
 		return
 	}
 
@@ -537,7 +620,7 @@ func (app *application) handleReleaseLink(link *beatport.Link) {
 			trackStoreUrl := track.StoreUrl()
 			track.Release = *release
 
-			if err := app.handleTrack(track, downloadsDir, cover); err != nil {
+			if err := app.handleTrack(track, downloadsDir, cover, ""); err != nil {
 				app.errorLogWrapper(trackStoreUrl, "handle track", err)
 				return
 			}
@@ -562,7 +645,7 @@ func (app *application) handlePlaylistLink(link *beatport.Link) {
 
 	downloadsDir, err := app.setupDownloadsDirectory(app.config.DownloadsDirectory, playlist)
 	if err != nil {
-		app.errorLogWrapper(link.Original, "setup downloads directory", err)
+	app.publishUrlError(link.Original, "setup downloads directory", err)
 		return
 	}
 
@@ -588,7 +671,7 @@ func (app *application) handlePlaylistLink(link *beatport.Link) {
 			if app.config.SortByContext && app.config.ForceReleaseDirectories {
 				trackDownloadsDir, err = app.setupDownloadsDirectory(downloadsDir, release)
 				if err != nil {
-					app.errorLogWrapper(trackStoreUrl, "setup track release directory", err)
+				app.publishUrlError(trackStoreUrl, "setup track release directory", err)
 					return
 				}
 			}
@@ -603,7 +686,7 @@ func (app *application) handlePlaylistLink(link *beatport.Link) {
 				}
 			}
 
-			if err := app.handleTrack(&item.Track, trackDownloadsDir, cover); err != nil {
+			if err := app.handleTrack(&item.Track, trackDownloadsDir, cover, ""); err != nil {
 				app.errorLogWrapper(trackStoreUrl, "handle track", err)
 				os.Remove(cover)
 				app.cleanup(trackDownloadsDir)
@@ -639,7 +722,7 @@ func (app *application) handleChartLink(link *beatport.Link) {
 
 	downloadsDir, err := app.setupDownloadsDirectory(app.config.DownloadsDirectory, chart)
 	if err != nil {
-		app.errorLogWrapper(link.Original, "setup downloads directory", err)
+	app.publishUrlError(link.Original, "setup downloads directory", err)
 		return
 	}
 	wg := sync.WaitGroup{}
@@ -678,7 +761,7 @@ func (app *application) handleChartLink(link *beatport.Link) {
 			if app.config.SortByContext && app.config.ForceReleaseDirectories {
 				trackDownloadsDir, err = app.setupDownloadsDirectory(downloadsDir, release)
 				if err != nil {
-					app.errorLogWrapper(trackStoreUrl, "setup track release directory", err)
+				app.publishUrlError(trackStoreUrl, "setup track release directory", err)
 					return
 				}
 			}
@@ -693,7 +776,7 @@ func (app *application) handleChartLink(link *beatport.Link) {
 				}
 			}
 
-			if err := app.handleTrack(&track, trackDownloadsDir, cover); err != nil {
+			if err := app.handleTrack(&track, trackDownloadsDir, cover, ""); err != nil {
 				app.errorLogWrapper(trackStoreUrl, "handle track", err)
 				os.Remove(cover)
 				app.cleanup(trackDownloadsDir)
@@ -729,7 +812,7 @@ func (app *application) handleLabelLink(link *beatport.Link) {
 
 	downloadsDir, err := app.setupDownloadsDirectory(app.config.DownloadsDirectory, label)
 	if err != nil {
-		app.errorLogWrapper(link.Original, "setup downloads directory", err)
+	app.publishUrlError(link.Original, "setup downloads directory", err)
 		return
 	}
 
@@ -763,7 +846,7 @@ func (app *application) handleLabelLink(link *beatport.Link) {
 
 			releaseDir, err := app.setupDownloadsDirectory(downloadsDir, release)
 			if err != nil {
-				app.errorLogWrapper(trackStoreUrl, "setup track release downloads directory", err)
+			app.publishUrlError(trackStoreUrl, "setup track release downloads directory", err)
 				return
 			}
 
@@ -773,7 +856,7 @@ func (app *application) handleLabelLink(link *beatport.Link) {
 				app.errorLogWrapper(trackStoreUrl, "download track release cover", err)
 			}
 
-			if err := app.handleTrack(track, releaseDir, cover); err != nil {
+			if err := app.handleTrack(track, releaseDir, cover, ""); err != nil {
 				app.errorLogWrapper(trackStoreUrl, "handle track", err)
 				app.cleanup(releaseDir)
 				return
@@ -806,7 +889,7 @@ func (app *application) handleArtistLink(link *beatport.Link) {
 
 	downloadsDir, err := app.setupDownloadsDirectory(app.config.DownloadsDirectory, artist)
 	if err != nil {
-		app.errorLogWrapper(link.Original, "setup downloads directory", err)
+	app.publishUrlError(link.Original, "setup downloads directory", err)
 		return
 	}
 
@@ -829,7 +912,7 @@ func (app *application) handleArtistLink(link *beatport.Link) {
 				}
 				return release, nil
 			})
-			
+
 			if err != nil {
 				app.errorLogWrapper(trackStoreUrl, "fetch track release", err)
 				return
@@ -839,7 +922,7 @@ func (app *application) handleArtistLink(link *beatport.Link) {
 
 			releaseDir, err := app.setupDownloadsDirectory(downloadsDir, release)
 			if err != nil {
-				app.errorLogWrapper(trackStoreUrl, "setup track release downloads directory", err)
+			app.publishUrlError(trackStoreUrl, "setup track release downloads directory", err)
 				return
 			}
 
@@ -851,7 +934,7 @@ func (app *application) handleArtistLink(link *beatport.Link) {
 				}
 			}
 
-			if err := app.handleTrack(track, releaseDir, cover); err != nil {
+			if err := app.handleTrack(track, releaseDir, cover, ""); err != nil {
 				app.errorLogWrapper(trackStoreUrl, "handle track", err)
 				os.Remove(cover)
 				app.cleanup(releaseDir)

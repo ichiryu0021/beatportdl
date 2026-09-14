@@ -1,0 +1,50 @@
+/* Minimal dark-ish theme for the Beatport downloader GUI. */
+
+QMainWindow, QWidget {
+    background-color: #1e1e22;
+    color: #e0e0e0;
+}
+
+QTabWidget::pane {
+    border: 1px solid #3a3a44;
+    background: #25252b;
+}
+
+QTabBar::tab {
+    background: #2c2c33;
+    color: #b0b0b0;
+    padding: 6px 14px;
+    border: 1px solid #3a3a44;
+    border-bottom: none;
+}
+QTabBar::tab:selected {
+    background: #35353d;
+    color: #ffffff;
+}
+
+QPushButton {
+    background-color: #3a3a44;
+    color: #ffffff;
+    border: 1px solid #4a4a55;
+    padding: 5px 14px;
+    border-radius: 3px;
+}
+QPushButton:hover  { background-color: #4a4a55; }
+QPushButton:pressed{ background-color: #2c2c33; }
+
+QLineEdit, QSpinBox, QComboBox, QPlainTextEdit, QListWidget {
+    background-color: #2c2c33;
+    color: #e0e0e0;
+    border: 1px solid #3a3a44;
+    border-radius: 2px;
+    padding: 3px;
+}
+
+QListWidget::item:selected {
+    background-color: #3f3f4a;
+    color: #ffffff;
+}
+
+QLabel { color: #e0e0e0; }
+
+QPlainTextEdit { font-family: Consolas, "Courier New", monospace; }

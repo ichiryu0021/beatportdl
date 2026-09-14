@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -18,6 +19,8 @@ type Beatport struct {
 	client  *http.Client
 	headers map[string]string
 	auth    *Auth
+	// baseURL 默认空（走 beatportBaseUrl）；SetBaseURL 可指向自建网关或测试服务器。
+	baseURL string
 }
 
 type FetcherError struct {
@@ -72,6 +75,14 @@ func New(proxyUrl string, auth *Auth) *Beatport {
 	return &f
 }
 
+// SetAuth 替换 Beatport 的 auth 引用，供 server 层在前端 login 成功后
+// 把新 auth 装回同一个 Beatport 实例。
+func (b *Beatport) SetAuth(auth *Auth) { b.auth = auth }
+
+// SetBaseURL 覆盖 API 根地址（去掉结尾斜杠）。默认走官方
+// https://api.beatport.com/v4；测试可指向 httptest 服务器。
+func (b *Beatport) SetBaseURL(base string) { b.baseURL = strings.TrimRight(base, "/") }
+
 func (b *Beatport) fetch(method, endpoint string, payload interface{}, contentType string) (*http.Response, error) {
 	var body bytes.Buffer
 
@@ -98,7 +109,11 @@ func (b *Beatport) fetch(method, endpoint string, payload interface{}, contentTy
 		}
 	}
 
-	req, err := http.NewRequest(method, beatportBaseUrl+endpoint, &body)
+	base := b.baseURL
+	if base == "" {
+		base = beatportBaseUrl
+	}
+	req, err := http.NewRequest(method, base+endpoint, &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

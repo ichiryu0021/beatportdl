@@ -63,7 +63,14 @@ func Setup() (cfg *config.AppConfig, cachePath string, err error) {
 		}
 	}
 
-	parsedConfig, err := config.Parse(configFilePath)
+	// --serve 模式允许空凭据配置，等前端 login RPC 提交。CLI 模式仍强制
+	// 非空（Parse 会报 "username or password is not provided"）。
+	var parsedConfig *config.AppConfig
+	if earlyServeFlag {
+		parsedConfig, err = config.ParseLenient(configFilePath)
+	} else {
+		parsedConfig, err = config.Parse(configFilePath)
+	}
 	if err != nil {
 		return nil, configFilePath, fmt.Errorf("load config: %w", err)
 	}

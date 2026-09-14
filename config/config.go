@@ -25,6 +25,9 @@ type AppConfig struct {
 	SortByContext           bool   `yaml:"sort_by_context,omitempty"`
 	SortByLabel             bool   `yaml:"sort_by_label,omitempty"`
 	ForceReleaseDirectories bool   `yaml:"force_release_directories,omitempty"`
+	SortByGenre             bool   `yaml:"sort_by_genre,omitempty"`
+	GenreSortMode           string `yaml:"genre_sort_mode,omitempty"`
+	VerifyIntegrity         bool   `yaml:"verify_integrity,omitempty"`
 	TrackExists             string `yaml:"track_exists,omitempty"`
 	TrackNumberPadding      int    `yaml:"track_number_padding,omitempty"`
 
@@ -96,6 +99,8 @@ func Parse(filePath string) (*AppConfig, error) {
 		ShowProgress:              true,
 		MaxGlobalWorkers:          15,
 		MaxDownloadWorkers:        15,
+		GenreSortMode:             "genre",
+		VerifyIntegrity:           true,
 	}
 	decoder := yaml.NewDecoder(file)
 	if err := decoder.Decode(&config); err != nil {
@@ -106,12 +111,55 @@ func Parse(filePath string) (*AppConfig, error) {
 		return nil, fmt.Errorf("username or password is not provided")
 	}
 
+	return parseValidate(&config)
+}
+
+// ParseLenient 与 Parse 相同但不强制 username/password 非空，用于 --serve
+// 模式：后端可在无凭据配置下启动，等前端 login RPC 提交凭据后再认证。
+// 其余校验（quality/ffmpeg 等）仍生效。
+func ParseLenient(filePath string) (*AppConfig, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	config := AppConfig{
+		Quality:                   "lossless",
+		CoverSize:                 DefaultCoverSize,
+		TrackFileTemplate:         "{number}. {artists} - {name} ({mix_name})",
+		ReleaseDirectoryTemplate:  "[{catalog_number}] {artists} - {name}",
+		PlaylistDirectoryTemplate: "{name} [{created_date}]",
+		ChartDirectoryTemplate:    "{name} [{published_date}]",
+		LabelDirectoryTemplate:    "{name} [{updated_date}]",
+		ArtistDirectoryTemplate:   "{name}",
+		ArtistsLimit:              3,
+		ArtistsShortForm:          "VA",
+		KeySystem:                 "standard-short",
+		TrackExists:               "update",
+		TrackNumberPadding:        2,
+		FixTags:                   true,
+		ShowProgress:              true,
+		MaxGlobalWorkers:          15,
+		MaxDownloadWorkers:        15,
+		GenreSortMode:             "genre",
+		VerifyIntegrity:           true,
+	}
+	decoder := yaml.NewDecoder(file)
+	if err := decoder.Decode(&config); err != nil {
+		return nil, fmt.Errorf("failed to decode config file: %w", err)
+	}
+	return parseValidate(&config)
+}
+
+// parseValidate 执行 quality/ffmpeg 等非凭据校验，供 Parse 与
+// ParseLenient 共用。
+func parseValidate(config *AppConfig) (*AppConfig, error) {
 	if config.Quality == "medium-hls" && !FFMPEGInstalled() {
 		return nil, errors.New("ffmpeg not found")
 	}
 
 	if config.TagMappings != nil {
-		if err = ValidateTagMappings(config.TagMappings); err != nil {
+		if err := ValidateTagMappings(config.TagMappings); err != nil {
 			return nil, err
 		}
 
@@ -142,7 +190,7 @@ func Parse(filePath string) (*AppConfig, error) {
 		return nil, fmt.Errorf("invalid track number padding")
 	}
 
-	return &config, nil
+	return config, nil
 }
 
 func (c *AppConfig) Save(filePath string) error {

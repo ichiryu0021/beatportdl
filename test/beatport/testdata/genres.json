@@ -1,0 +1,13 @@
+{
+  "next": null,
+  "previous": null,
+  "count": 3,
+  "page": "1",
+  "per_page": 3,
+  "results": [
+    {"id": 11, "name": "Progressive House", "slug": "progressive-house"},
+    {"id": 7, "name": "Tech House", "slug": "tech-house"},
+    {"id": 12, "name": "Techno", "slug": "techno"}
+  ],
+  "facets": {"fields": {}}
+}

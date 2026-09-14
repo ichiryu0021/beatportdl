@@ -9,3 +9,9 @@ beatportdl-credentials.json
 beatportdl-config.yml
 downloads/
 ./beatportdl
+
+# 本地便携部署目录（含 exe/DLL/配置/凭据）与 Qt 构建产物
+/test-deploy/
+/gui/build/
+/dl-test/
+

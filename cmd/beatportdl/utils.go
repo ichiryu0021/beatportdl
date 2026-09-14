@@ -18,6 +18,32 @@ import (
 )
 
 func (app *application) downloadFile(url string, destination string, pbPrefix string) error {
+	return app.downloadFileProgress(url, destination, pbPrefix, nil)
+}
+
+// progressReader wraps an io.Reader and reports the number of bytes copied so
+// far through onProgress. Used to stream download progress to the GUI without
+// disturbing the CLI progress bar.
+type progressReader struct {
+	r         io.Reader
+	received  int64
+	total     int64
+	onProgress func(received, total int64)
+}
+
+func (p *progressReader) Read(buf []byte) (int, error) {
+	n, err := p.r.Read(buf)
+	if n > 0 {
+		p.received += int64(n)
+		p.onProgress(p.received, p.total)
+	}
+	return n, err
+}
+
+// downloadFileProgress is downloadFile with an optional per-copy progress
+// callback (nil disables it). The callback fires with cumulative received bytes
+// and the Content-Length total; total is 0 when the server sent no length.
+func (app *application) downloadFileProgress(url string, destination string, pbPrefix string, onProgress func(received, total int64)) error {
 	out, err := os.Create(destination)
 	if err != nil {
 		return fmt.Errorf("create file: %w", err)
@@ -34,19 +60,32 @@ func (app *application) downloadFile(url string, destination string, pbPrefix st
 		return fmt.Errorf("bad status: %s", resp.Status)
 	}
 
-	if pbPrefix != "" {
-		contentLength, _ := strconv.Atoi(resp.Header.Get("Content-Length"))
+	contentLength, _ := strconv.Atoi(resp.Header.Get("Content-Length"))
+	// app.pbp 是 CLI 终端进度条容器，仅交互模式初始化；--serve 模式下为
+	// nil，此时不能创建 mpb bar（会 nil 指针 panic），只做纯流式拷贝，
+	// GUI 进度由 onProgress 回调（SSE）驱动。
+	if pbPrefix != "" && app.pbp != nil {
 		bar := app.pbp.AddBar(int64(contentLength), ProgressBarOptions(pbPrefix)...)
 
 		proxyReader := bar.ProxyReader(resp.Body)
 		defer proxyReader.Close()
 
-		_, err = io.Copy(out, proxyReader)
+		src := io.Reader(proxyReader)
+		if onProgress != nil {
+			src = &progressReader{r: proxyReader, total: int64(contentLength), onProgress: onProgress}
+		}
+
+		_, err = io.Copy(out, src)
 		if err != nil {
 			return err
 		}
 	} else {
-		_, err = io.Copy(out, resp.Body)
+		src := io.Reader(resp.Body)
+		if onProgress != nil {
+			src = &progressReader{r: resp.Body, total: int64(contentLength), onProgress: onProgress}
+		}
+
+		_, err = io.Copy(out, src)
 		if err != nil {
 			return err
 		}
@@ -126,6 +165,14 @@ func (app *application) LogInfo(info string) {
 	fmt.Fprint(app.logWriter, message)
 }
 
+// setAuthReady 标记认证状态。--serve 模式启动时若缓存失效/无凭据会置
+// false，等前端 login RPC 成功后置 true。
+func (app *application) setAuthReady(ready bool) {
+	app.authMu.Lock()
+	app.authReady = ready
+	app.authMu.Unlock()
+}
+
 func (app *application) FatalError(caller string, err error) {
 	app.LogError(caller, err)
 	Pause()
@@ -152,6 +199,12 @@ func WorkingDirFilePath(fileName string) (string, error) {
 }
 
 func FindConfigFile() (string, bool, error) {
+	// --config 显式指定时，直接返回该路径，跳过默认搜索顺序。
+	if configPathOverride != "" {
+		_, err := os.Stat(configPathOverride)
+		return configPathOverride, err == nil, nil
+	}
+
 	var additionalDirs []string
 
 	if runtime.GOOS == "linux" {
@@ -168,6 +221,13 @@ func FindConfigFile() (string, bool, error) {
 }
 
 func FindCacheFile() (string, bool, error) {
+	// --config 指定时，凭据缓存与配置文件同目录，保证测试隔离。
+	if configPathOverride != "" {
+		p := filepath.Join(filepath.Dir(configPathOverride), cacheFilename)
+		_, err := os.Stat(p)
+		return p, err == nil, nil
+	}
+
 	var additionalDirs []string
 
 	if runtime.GOOS == "linux" {

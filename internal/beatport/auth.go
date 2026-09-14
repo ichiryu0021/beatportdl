@@ -52,6 +52,9 @@ func NewAuth(username, password, cacheFile string) *Auth {
 	}
 }
 
+// CacheFile 返回凭据缓存文件路径，供 server 层在 login 时复用同一路径。
+func (a *Auth) CacheFile() string { return a.cacheFile }
+
 func (a *Auth) LoadCache() error {
 	data, err := os.ReadFile(a.cacheFile)
 	if err != nil {
@@ -93,6 +96,12 @@ func (a *Auth) WriteCache() error {
 func (a *Auth) Check(inst *Beatport) error {
 	currentTime := time.Now().Unix()
 	a.mutex.RLock()
+	if a.tokenPair == nil {
+		// --serve 模式未登录（无凭据/缓存失效等前端 login RPC）时，
+		// 没有可用 token，任何需要认证的请求都应明确报错而非 nil 解引用。
+		a.mutex.RUnlock()
+		return fmt.Errorf("not authenticated: no cached token")
+	}
 	tokenExpirationTime := a.tokenPair.IssuedAt + a.tokenPair.ExpiresIn
 	a.mutex.RUnlock()
 	if currentTime+300 >= tokenExpirationTime {
