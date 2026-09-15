@@ -67,7 +67,7 @@ bool parseBool(const QString &s, bool fallback)
     return fallback;
 }
 
-bool parseInt(const QString &s, int fallback)
+int parseInt(const QString &s, int fallback)
 {
     bool ok = false;
     const int v = s.trimmed().toInt(&ok);
