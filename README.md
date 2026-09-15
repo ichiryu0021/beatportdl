@@ -1,192 +1,193 @@
-# BeatportDL
+# BPDownloader — Beatport/Beatsource Downloader (C++/Qt)
 
-Beatport & Beatsource downloader (FLAC, AAC)
+**English** | [简体中文](#简体中文)
 
-*Requires an active [Beatport](https://stream.beatport.com/) or [Beatsource](https://stream.beatsource.com/) streaming plan.*
-
-![Screenshot](/screenshots/main.png?raw=true "Screenshot")
-
-Setup
----
-1. [Download](https://github.com/unspok3n/beatportdl/releases/) or [build](#building) BeatportDL.
-
-     *Compiled binaries for Windows, macOS (amd64, arm64) and Linux (amd64, arm64) are available on the [Releases](https://github.com/unspok3n/beatportdl/releases) page.* \
-     *Don't forget to set the execute permission on unix systems, e.g., chmod +x beatportdl-darwin-arm64*
-
-2. Run beatportdl (e.g. `./beatportdl-darwin-arm64`), then specify the:
-   - Beatport username
-   - Beatport password
-   - Downloads directory
-   - Audio quality
-
-3. OPTIONAL: Customize a config file. Create a new config file by running:
-```shell
-./beatportdl
-```
-This will create a new `beatportdl-config.yml` file. You can put the following options and values into the config file:
+> A C++17 / Qt 6 rewrite and fork of [**unspok3n/beatportdl**](https://github.com/unspok3n/beatportdl) (Go), rebuilt as a native Windows desktop application with a graphical interface, bilingual UI, light/dark themes, and a fully static single-file executable.
+>
+> This repository is a GitHub fork of the original project and therefore keeps its commit history and the GPL-3.0 license. All original copyright belongs to **unspok3n** and the beatportdl contributors.
 
 ---
-| Option                        | Default Value                             | Type       | Description                                                                                                                                                                               |
-|-------------------------------|-------------------------------------------|------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `username`                    |                                           | String     | Beatport username                                                                                                                                                                         |
-| `password`                    |                                           | String     | Beatport password                                                                                                                                                                         |
-| `quality`                     | lossless                                  | String     | Download quality *(medium-hls, medium, high, lossless)*                                                                                                                                   |
-| `show_progress`               | true                                      | Boolean    | Enable progress bars                                                                                                                                                                      |
-| `write_error_log`             | false                                     | Boolean    | Write errors to `error.log`                                                                                                                                                               |
-| `max_download_workers`        | 15                                        | Integer    | Concurrent download jobs limit                                                                                                                                                            |
-| `max_global_workers`          | 15                                        | Integer    | Concurrent global jobs limit                                                                                                                                                              |
-| `downloads_directory`         |                                           | String     | Location for the downloads directory                                                                                                                                                      |
-| `sort_by_context`             | false                                     | Boolean    | Create a directory for each release, playlist, chart, label, or artist                                                                                                                    |
-| `sort_by_label`               | false                                     | Boolean    | Use label names as parent directories for releases (requires `sort_by_context`)                                                                                                           |
-| `force_release_directories`   | false                                     | Boolean    | Create release directories inside chart and playlist folders (requires `sort_by_context`)                                                                                                 |
-| `track_exists`                | update                                    | String     | Behavior when track file already exists                                                                                                                                                   |
-| `track_number_padding`        | 2                                         | Integer    | Track number padding for filenames and tag mappings (when using `track_number_with_padding` or `release_track_count_with_padding`)<br/> Set to 0 for dynamic padding based on track count |
-| `cover_size`                  | 1400x1400                                 | String     | Cover art size for `keep_cover` and track metadata (if `fix_tags` is enabled)  *[max: 1400x1400]*                                                                                         |
-| `keep_cover`                  | false                                     | Boolean    | Download cover art file (cover.jpg) to the context directory (requires `sort_by_context`)                                                                                                 |
-| `fix_tags`                    | true                                      | Boolean    | Enable tag writing capabilities                                                                                                                                                           |
-| `tag_mappings`                | *Listed below*                            | String Map | Custom tag mappings                                                                                                                                                                       |
-| `track_file_template`         | {number}. {artists} - {name} ({mix_name}) | String     | Track filename template                                                                                                                                                                   |
-| `release_directory_template`  | [{catalog_number}] {artists} - {name}     | String     | Release directory template                                                                                                                                                                |
-| `playlist_directory_template` | {name} [{created_date}]                   | String     | Playlist directory template                                                                                                                                                               |
-| `chart_directory_template`    | {name} [{published_date}]                 | String     | Chart directory template                                                                                                                                                                  |
-| `label_directory_template`    | {name} [{updated_date}]                   | String     | Label directory template                                                                                                                                                                  |
-| `artist_directory_template`   | {name}                                    | String     | Artist directory template                                                                                                                                                                 |
-| `whitespace_character`        |                                           | String     | Whitespace character for track filenames and release directories                                                                                                                          |
-| `artists_limit`               | 3                                         | Integer    | Maximum number of artists allowed before replacing with `artists_short_form` (affects directories, filenames, and search results)                                                         |
-| `artists_short_form`          | VA                                        | String     | Custom string to represent "Various Artists"                                                                                                                                              |
-| `key_system`                  | standard-short                            | String     | Music key system used in filenames and tags                                                                                                                                               |
-| `proxy`                       |                                           | String     | Proxy URL                                                                                                                                                                                 |
 
-If the Beatport credentials are correct, you should also see the file `beatportdl-credentials.json` appear in the BeatportDL directory.
-*If you accidentally entered an incorrect password and got an error, you can always manually edit the config file*
+## Features
 
-Download quality options, per Beatport/Beatsource subscription type:
+- 🎧 Browse and download from **Beatport** and **Beatsource** with your own account
+- 🎵 **FLAC** (lossless) and **AAC** (HLS) audio
+- ⚡ **Multi-threaded concurrent downloads** with configurable global / per-task worker counts
+- 🗂️ **Organize downloads into genre folders** — by genre, or by sub-genre with genre fallback
+- 🏷️ Automatic metadata tagging and embedded cover art (TagLib)
+- 🕒 **Scheduled download tasks** per genre (daily / weekly / monthly / every 3 months)
+- 🌐 Three proxy modes: direct connection, system proxy, or custom HTTP proxy
+- 🎨 Light and dark themes
+- 🌍 Bilingual interface: **English / 简体中文**, switchable in Settings
+- 🪟 Single static `.exe` for Windows — no runtime or installer required
+- 🖥️ Three run modes built from one codebase: GUI (default), `--serve` (HTTP/JSON-RPC), and `--cli` (interactive/batch)
 
-| Option       | Description                                                                                                  | Requires at least              | Notes                                                                   |
-|--------------|--------------------------------------------------------------------------------------------------------------|--------------------------------|-------------------------------------------------------------------------|
-| `medium-hls` | 128 kbps AAC through `/stream` endpoint (IMPORTANT: requires [ffmpeg](https://www.ffmpeg.org/download.html)) | Essential / Beatsource         | Same as `medium` on Advanced but uses a slightly slower download method |
-| `medium`     | 128 kbps AAC                                                                                                 | Advanced / Beatsource Pro+     |                                                                         |
-| `high`       | 256 kbps AAC                                                                                                 | Professional / Beatsource Pro+ |                                                                         |
-| `lossless`   | 44.1 kHz FLAC                                                                                                | Professional / Beatsource Pro+ |                                                                         |
+## Requirements
 
-Available `track_exists` options:
-* `error` Log error and skip
-* `skip` Skip silently
-* `overwrite` Re-download
-* `update` Update tags
+- Windows 10 / 11 (x64)
+- A valid Beatport or Beatsource account. You can only download content your account is entitled to access.
 
-Available template keywords for filenames and directories (`*_template`):
-* Track: `id`,`name`,`mix_name`,`slug`,`artists`,`remixers`,`number`,`length`,`key`,`bpm`,`genre`,`subgenre`,`genre_with_subgenre`,`subgenre_or_genre`,`isrc`,`label`
-* Release: `id`,`name`,`slug`,`artists`,`remixers`,`date`,`year`,`track_count`,`bpm_range`,`catalog_number`,`upc`,`label`
-* Playlist: `id`,`name`,`first_genre`,`track_count`,`bpm_range`,`length`,`created_date`,`updated_date`
-* Chart: `id`,`name`,`slug`,`first_genre`,`track_count`,`creator`,`created_date`,`published_date`,`updated_date`
-* Artist: `id`, `name`, `slug`
-* Label: `id`, `name`, `slug`, `created_date`, `updated_date`
+## Usage
 
-Default `tag_mappings` config:
-```yaml
-tag_mappings:
-   flac:
-      track_name: "TITLE"
-      track_artists: "ARTIST"
-      track_number: "TRACKNUMBER"
-      track_subgenre_or_genre: "GENRE"
-      track_key: "KEY"
-      track_bpm: "BPM"
-      track_isrc: "ISRC"
-   
-      release_name: "ALBUM"
-      release_artists: "ALBUMARTIST"
-      release_date: "DATE"
-      release_track_count: "TOTALTRACKS"
-      release_catalog_number: "CATALOGNUMBER"
-      release_label: "LABEL"
-   m4a:
-      track_name: "TITLE"
-      track_artists: "ARTIST"
-      track_number: "TRACKNUMBER"
-      track_genre: "GENRE"
-      track_key: "KEY"
-      track_bpm: "BPM"
-      track_isrc: "ISRC"
-   
-      release_name: "ALBUM"
-      release_artists: "ALBUMARTIST"
-      release_date: "DATE"
-      release_track_count: "TOTALTRACKS"
-      release_catalog_number: "CATALOGNUMBER"
-      release_label: "LABEL"
+1. Download `BPDownloader.exe` from the [Releases](../../releases) page.
+2. Run it and log in with your Beatport/Beatsource credentials in the login dialog.
+3. Use the tabs:
+   - **Discover** — browse the latest releases by genre
+   - **Search** — search tracks/releases
+   - **Scheduled Tasks** — set up recurring downloads for a chosen genre
+   - **Downloads** — monitor download progress and history
+   - **Settings** — download folder, format, naming scheme, proxy, concurrency, genre folders, theme and language
+
+Settings are stored next to the executable in `bpdownloader-config.yml`.
+
+> ⚠️ Never share your config file or `*-credentials.json` — they contain your login data.
+
+### Headless modes
+
+```text
+BPDownloader.exe              # GUI (default)
+BPDownloader.exe --serve      # embedded HTTP / JSON-RPC server
+BPDownloader.exe --cli        # interactive / batch command line
 ```
 
-As you can see, each key here represents a predefined value from either a release or a track that you can use to customize what is written to which tags. When you add an entry in the mappings for any format (for e.g., `flac`), only the tags that you specify will be written.
+## Building from source
 
-All tags by default are converted to uppercase, but since some M4A players might not recognize it, you can write the tag in lowercase and add the `_raw` suffix to bypass the conversion. *(This applies to M4A tags only)*
+Toolchain: Windows + [MSYS2](https://www.msys2.org/) (MinGW-w64), CMake 3.21+, Qt 6 (Widgets, Network), OpenSSL 1.1/3, TagLib 2.x.
 
-For e.g., Traktor doesn't recognize the track key tag in uppercase, so you have to add:
-```yaml
-tag_mappings:
-   m4a:
-      track_key: "initialkey_raw"
+```bash
+# Inside an MSYS2 MINGW64 shell
+pacman -S --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake \
+  mingw-w64-x86_64-qt6-base mingw-w64-x86_64-openssl mingw-w64-x86_64-taglib
+
+cmake -S . -B build -G "MinGW Makefiles"
+cmake --build build -j
 ```
 
-Available `tag_mappings` keys: `track_id`,`track_url`,`track_name`,`track_artists`,`track_artists_limited`,`track_remixers`,`track_remixers_limited`,`track_number`,`track_number_with_padding`,`track_number_with_total`,`track_genre`,`track_subgenre`,`track_genre_with_subgenre`,`track_subgenre_or_genre`,`track_key`,`track_bpm`,`track_isrc`,`release_id`,`release_url`,`release_name`,`release_artists`,`release_artists_limited`,`release_remixers`,`release_remixers_limited`,`release_date`,`release_year`,`release_track_count`,`release_track_count_with_padding`,`release_catalog_number`,`release_upc`,`release_label`,`release_label_url`
+### Static single-file build
 
-Available `key_system` options:
+Use a static Qt 6 prefix and enable `BP_STATIC_LINK`:
 
-| System           | Example           |
-|------------------|-------------------|
-| `standard`       | Eb Minor, F Major |
-| `standard-short` | Ebm, F            |
-| `openkey`        | 7m, 12d           |
-| `camelot`        | 2A, 7B            |
+```bash
+cmake -S . -B build-static -G "MinGW Makefiles" \
+  -DCMAKE_PREFIX_PATH="/path/to/qt6-static;/mingw64" \
+  -DBP_STATIC_LINK=ON
+cmake --build build-static -j
+```
 
-Proxy URL format example: `http://username:password@127.0.0.1:8080`
+### Updating translations
 
-Usage
+The UI source language is English; Simplified Chinese lives in [i18n/bpdownloader_zh_CN.ts](i18n/bpdownloader_zh_CN.ts).
+The `.ts` file is compiled to an embedded `.qm` resource automatically at build time.
+
+```bash
+cmake --build build --target update_translations   # refresh the .ts file with lupdate
+# translate the new strings in Qt Linguist, then rebuild
+```
+
+## Disclaimer
+
+This software is provided for personal use only. You are responsible for complying with Beatport's/Beatsource's Terms of Service and the copyright laws applicable in your jurisdiction. Only download content that you have legally purchased or are otherwise entitled to access. The authors accept no responsibility for misuse.
+
+## License
+
+Licensed under the **GNU General Public License v3.0 or later**, per the original project. See [LICENSE](LICENSE) for the full text and [NOTICE](NOTICE) for attribution.
+
+Beatport® and Beatsource® are trademarks of their respective owners; this project is an independent, unofficial work and is not affiliated with them.
+
 ---
 
-Run BeatportDL and enter Beatport or Beatsource URL or search query:
-```shell
-./beatportdl
-Enter url or search query:
+<a id="简体中文"></a>
+
+# BPDownloader —— Beatport / Beatsource 下载器（C++/Qt）
+
+[English](#bpdownloader--beatportbeatsource-downloader-cqt) | **简体中文**
+
+> 本项目是 [**unspok3n/beatportdl**](https://github.com/unspok3n/beatportdl)（Go 语言）的 C++17 / Qt 6 重写与 fork，以原生 Windows 桌面应用的形式重新实现，提供图形界面、中英双语、浅色/深色主题，以及全静态单文件可执行程序。
+>
+> 本仓库是原项目的 GitHub fork，保留了其提交历史与 GPL-3.0 协议。原始版权归 **unspok3n** 及 beatportdl 贡献者所有。
+
+## 功能特性
+
+- 🎧 使用你自己的账号浏览并下载 **Beatport** 和 **Beatsource**
+- 🎵 支持 **FLAC**（无损）与 **AAC**（HLS）音频
+- ⚡ **多线程并发下载**，可分别配置全局/每任务并发数
+- 🗂️ **按曲风分类存放下载文件** —— 按曲风，或按子曲风（无则回退到曲风）
+- 🏷️ 自动写入元数据标签并内嵌封面（TagLib）
+- 🕒 按曲风设置 **定时下载任务**（每天 / 每周 / 每月 / 每三个月）
+- 🌐 代理三态：直连、跟随系统、自定义 HTTP 代理
+- 🎨 浅色 / 深色主题
+- 🌍 **中英双语界面**，在设置页随时切换
+- 🪟 Windows 单文件静态 `.exe`，无需运行库、无需安装
+- 🖥️ 同一套代码三种运行模式：GUI（默认）、`--serve`（HTTP/JSON-RPC）、`--cli`（交互式/批处理）
+
+## 运行要求
+
+- Windows 10 / 11（x64）
+- 有效的 Beatport 或 Beatsource 账号，且只能下载你的账号有权访问的内容
+
+## 使用方法
+
+1. 在 [Releases](../../releases) 页面下载 `BPDownloader.exe`。
+2. 运行后在登录窗口输入 Beatport/Beatsource 账号登录。
+3. 各标签页说明：
+   - **发现最新**：按曲风浏览最新发行
+   - **搜索**：搜索单曲/专辑
+   - **定时任务**：为指定曲风设置周期性下载
+   - **下载**：查看下载进度与历史
+   - **设置**：下载目录、格式、命名规则、代理、并发数、曲风文件夹、主题与语言
+
+配置保存在可执行文件旁的 `bpdownloader-config.yml` 中。
+
+> ⚠️ 切勿将配置文件或 `*-credentials.json` 分享给他人，其中包含你的登录数据。
+
+### 无界面模式
+
+```text
+BPDownloader.exe              # 图形界面（默认）
+BPDownloader.exe --serve      # 内嵌 HTTP / JSON-RPC 服务
+BPDownloader.exe --cli        # 交互式 / 批处理命令行
 ```
-By default, search returns the results from beatport, if you want to search on beatsource instead, include `@beatsource` tag in the query
 
-...or specify the URL using positional arguments:
-```shell
-./beatportdl https://www.beatport.com/track/strobe/1696999 https://www.beatport.com/track/move-for-me/591753
-```
-...or provide a text file with urls (separated by a newline)
-```shell
-./beatportdl file.txt file2.txt
-```
+## 从源码构建
 
-URL types that are currently supported: **Tracks, Releases, Playlists, Charts, Labels, Artists**
+工具链：Windows + [MSYS2](https://www.msys2.org/)（MinGW-w64）、CMake 3.21+、Qt 6（Widgets、Network）、OpenSSL、TagLib 2.x。
 
-Building
----
-Required dependencies:
-* [TagLib](https://github.com/taglib/taglib) >= 2.0
-* [zlib](https://github.com/madler/zlib) >= 1.2.3
-* [Zig C/C++ Toolchain](https://github.com/ziglang/zig) >= 0.14.0
+```bash
+# 在 MSYS2 MINGW64 终端中
+pacman -S --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake \
+  mingw-w64-x86_64-qt6-base mingw-w64-x86_64-openssl mingw-w64-x86_64-taglib
 
-BeatportDL uses [TagLib](https://taglib.org/) C bindings to handle audio metadata and therefore requires [CGO](https://go.dev/wiki/cgo)
-
-Makefile is adapted for cross-compilation and uses [Zig toolchain](https://github.com/ziglang/zig)
-
-To compile BeatportDL with Zig using Makefile, you must specify the paths to the C/C++ libraries folder and headers folder for the desired OS and architecture with `-L` (for libraries) and `-I` (for headers) flags using environment variables: `MACOS_ARM64_LIB_PATH`, `MACOS_AMD64_LIB_PATH`, `LINUX_AMD64_LIB_PATH`, `LINUX_ARM64_LIB_PATH`, `WINDOWS_AMD64_LIB_PATH`
-
-One line example *(for unix and unix-like os)*
-```shell
-MACOS_ARM64_LIB_PATH="-L/usr/local/lib -I/usr/local/include" \
-make darwin-arm64
+cmake -S . -B build -G "MinGW Makefiles"
+cmake --build build -j
 ```
 
-You can also create an `.env` file in the project folder and specify all environment variables in it:
+### 静态单文件构建
+
+使用静态 Qt 6 prefix 并开启 `BP_STATIC_LINK`：
+
+```bash
+cmake -S . -B build-static -G "MinGW Makefiles" \
+  -DCMAKE_PREFIX_PATH="/path/to/qt6-static;/mingw64" \
+  -DBP_STATIC_LINK=ON
+cmake --build build-static -j
 ```
-MACOS_ARM64_LIB_PATH=-L/libraries/for/macos-arm64 -I/headers/for/macos-arm64
-MACOS_AMD64_LIB_PATH=-L/libraries/for/macos-amd64 -I/headers/for/macos-amd64
-LINUX_AMD64_LIB_PATH=-L/libraries/for/linux-amd64 -I/headers/for/linux-amd64
-LINUX_ARM64_LIB_PATH=-L/libraries/for/linux-arm64 -I/headers/for/linux-arm64
-WINDOWS_AMD64_LIB_PATH=-L/libraries/for/windows-amd64 -I/headers/for/windows-amd64
+
+### 更新翻译
+
+界面源语言为英文，简体中文翻译位于 [i18n/bpdownloader_zh_CN.ts](i18n/bpdownloader_zh_CN.ts)，
+构建时 `.ts` 会自动编译为内嵌的 `.qm` 资源。
+
+```bash
+cmake --build build --target update_translations   # 使用 lupdate 刷新 .ts
+# 在 Qt Linguist 中翻译新增条目后重新构建
 ```
+
+## 免责声明
+
+本软件仅供个人使用。你需要自行遵守 Beatport/Beatsource 的服务条款以及所在地的版权法律法规，仅下载你已合法购买或有权访问的内容。因不当使用造成的一切后果由使用者自行承担，作者概不负责。
+
+## 许可证
+
+依照原项目，采用 **GNU General Public License v3.0 或更高版本**。全文见 [LICENSE](LICENSE)，版权归属说明见 [NOTICE](NOTICE)。
+
+Beatport® 与 Beatsource® 为其各自所有者的商标，本项目为独立的非官方作品，与上述公司无任何关联。
