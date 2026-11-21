@@ -1,4 +1,4 @@
-# BeatportDL · WebView2 桌面版
+﻿# BeatportDL · WebView2 桌面版
 
 **v1.1.0** · Windows 10/11 x64 便携版 · Chromium / WebView2 界面 · 下载队列控制 · 代理 · 曲风分类 · GitHub 自动更新
 
@@ -31,13 +31,15 @@ Beatport & Beatsource downloader (FLAC, AAC)
 ## 从源码构建
 
 ```powershell
-# 干净便携包（不含 config/credentials/data/logs）
+# 清洁程序运行时；保留 dist/ 里已有的 config、credentials、data/、logs/
 .\build-desktop.ps1 -Package -Version 1.1.0
 
-# 生成 GitHub Release 的 hotfix / full 资产
+# 生成 GitHub Release 的 hotfix / full 资产（资产内不含用户配置/凭据/数据）
 .\build-update.ps1 -Version 1.1.0
 ```
 
+- `build-desktop.ps1` 只替换程序文件；如果 `dist/` 正在运行会拒绝打包，避免锁文件导致半成品。
+- GitHub 发布包由 `build-update.ps1` 生成，明确排除 `beatportdl-config.yml`、凭据、`data/`、`logs/`。
 - `build-desktop.ps1` 依赖 `bin\beatportdl.exe`（CGO/TagLib 后端）；Release 完整包已内置。
 - 更新器与发布细节见 [WORKLOG.md](WORKLOG.md)。
 - 前端自检：`index.html?selftest=1`（mock 桥）。
@@ -230,3 +232,4 @@ LINUX_AMD64_LIB_PATH=-L/libraries/for/linux-amd64 -I/headers/for/linux-amd64
 LINUX_ARM64_LIB_PATH=-L/libraries/for/linux-arm64 -I/headers/for/linux-arm64
 WINDOWS_AMD64_LIB_PATH=-L/libraries/for/windows-amd64 -I/headers/for/windows-amd64
 ```
+

@@ -215,9 +215,10 @@ go build -trimpath -ldflags "-H windowsgui -s -w" -o bin\bpdl-ui.exe .\cmd\bpdl-
 
 ## 8. 当前部署
 
-- `dist/`：干净便携版 **v1.1.0**（29.5 MB，gitignore）：`beatportdl_gui.exe`、`beatportdl.exe`、
+- `dist/`：本地清洁运行时 **v1.1.0**：`beatportdl_gui.exe`、`beatportdl.exe`、
   `WebView2Loader.dll`、6 个 TagLib/运行时 DLL、`启动.bat`、`version.txt`；
-  **不再包含** `beatportdl-config.yml`、`beatportdl-credentials.json`、`data/`、`logs/`。
+  **保留已有的** `beatportdl-config.yml`、凭据、`data/`、`logs/`。GitHub Release
+  资产由 `build-update.ps1` 生成，资产内不包含这些用户文件。
   首次运行会生成 `data/`（UI 资源、WebView2 用户数据、窗口状态）与 `logs/`。
 - `test-deploy/`：已换成新壳，保留用户原来的配置/凭据并恢复自动登录；
   `legacy-qt/` 为旧版（约 75 MB，可整体删除；根目录新壳 + 后端约 29.2 MB）。
@@ -320,9 +321,9 @@ go build -trimpath -ldflags "-H windowsgui -s -w" -o bin\bpdl-ui.exe .\cmd\bpdl-
 - 更新 helper 已用隔离临时目录实测：替换主程序、保留 config/credentials/data、写
   `update-state.json=ok`、启动新程序均正常。
 - 真实 GitHub API 检查已实测（当前 latest=v1.0.0，正确识别为无更新）。
-- 本轮已完成 **v1.1.0 干净打包**（无配置/凭据/data/logs），更新了 `test-deploy/`
-  运行文件并保留原配置；`test-deploy` 已启动为 v1.1.0，真实检查更新返回
-  “当前 v1.1.0 / 最新 v1.0.0 / 无更新”。
+- 本轮已完成 **v1.1.0 清洁打包**：只替换程序运行时，保留 `dist/` 里已有的配置/凭据/
+  `data/`/`logs/`；`test-deploy/` 运行文件更新后原配置也保持不动。
+  GitHub 发布资产仍明确排除这些用户文件。
 - GitHub 侧：按用户确认，保留 `ichiryu0021/beatportdl` 仓库与历史，清理全部旧
   Release/tag，推送新源码，创建 `v1.1.0` Release 并上传
   `bpdl-hotfix-v1.1.0.zip` 与 `bpdl-v1.1.0-full.zip`。
