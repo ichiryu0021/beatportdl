@@ -67,6 +67,7 @@ type bridge struct {
 
 	restarting atomic.Bool
 	updates    *updateManager
+	catalog    *catalogManager
 }
 
 func newBridge(rpc *rpcClient, b *backend, paths Paths, log *log.Logger, debug bool, webviewVersion, performanceMode string) *bridge {
@@ -81,6 +82,7 @@ func newBridge(rpc *rpcClient, b *backend, paths Paths, log *log.Logger, debug b
 		backendState:    "starting",
 	}
 	br.updates = newUpdateManager(paths, log)
+	br.catalog = newCatalogManager(paths, log)
 	br.eventBatch = newEventBatcher(br)
 	return br
 }
@@ -401,6 +403,29 @@ func (b *bridge) handleHost(msg inboundMessage) {
 	case "applyUpdate":
 		full := msg.Full != nil && *msg.Full
 		b.startUpdateApply(msg.ID, full)
+	case "getGenreCatalog":
+		go func() {
+			catalog, err := b.catalog.Catalog(false)
+			if err != nil {
+				b.reply(msg.ID, "host", nil, err)
+				return
+			}
+			b.reply(msg.ID, "host", catalog, nil)
+		}()
+	case "getLatestBySubgenres":
+		var p subgenreLatestParams
+		if err := json.Unmarshal(msg.Params, &p); err != nil {
+			b.reply(msg.ID, "host", nil, fmt.Errorf("子曲风参数错误：%w", err))
+			return
+		}
+		go func() {
+			result, err := b.catalog.Latest(p)
+			if err != nil {
+				b.reply(msg.ID, "host", nil, err)
+				return
+			}
+			b.reply(msg.ID, "host", result, nil)
+		}()
 	default:
 		b.reply(msg.ID, "host", nil, fmt.Errorf("未知操作: %s", msg.Action))
 	}

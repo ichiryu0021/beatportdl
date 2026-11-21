@@ -1,4 +1,4 @@
-﻿# BeatportDL · WebView2 桌面版
+# BeatportDL · WebView2 桌面版
 
 **v1.1.0** · Windows 10/11 x64 便携版 · Chromium / WebView2 界面 · 下载队列控制 · 代理 · 曲风分类 · GitHub 自动更新
 
@@ -23,6 +23,8 @@ Beatport & Beatsource downloader (FLAC, AAC)
 
 - Chromium/WebView2 原生窗口，界面资源走应用内虚拟站点，不额外开放本地 UI 端口。
 - 下载队列：勾选/全选、暂停、继续、停止全部、删除所选，稳定排序和原地进度刷新。
+- **子曲风单独表格**：曲风与子曲风分开展示，子曲风表包含所属曲风；两者二选一筛选，子曲风通过 Beatport `sub_genre_id` 精确过滤。
+- 启动时曲风加载失败或返回空列表会自动重试，不需要手动点“刷新曲风”。
 - 网络代理：http / https / socks5，API 与下载请求同时走代理。
 - 曲风分类：按主曲风或子曲风优先自动建立文件夹。
 - GitHub 自动更新：启动检查 Release，右上角提示新版本，支持 hotfix 与完整包回退。

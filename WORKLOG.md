@@ -41,6 +41,8 @@
 | `internal/desktop/` | 宿主逻辑：窗口编排、后端守护、RPC/SSE 客户端、消息桥、资源解包、性能模式 |
 | `internal/desktop/update.go` | GitHub Release 检查、zip 下载/校验、备份、更新 helper、自动重启 |
 | `internal/desktop/update_test.go` | 更新器纯逻辑单测（版本/资产/白名单/zip 安全/清单） |
+| `internal/desktop/catalog.go` | 读取缓存 OAuth token，拉取 Beatport 子曲风表并按 `sub_genre_id` 查询最新曲目 |
+| `internal/desktop/catalog_test.go` | 子曲风条目转换与数字解析单测 |
 | `internal/winui/` | Win32 窗口、暗色标题栏/DWM、IFileOpenDialog、ShellExecute、Job、单实例 |
 | `internal/webview2/` | 从 `jchv/go-webview2`（MIT）裁剪适配的 WebView2 COM 层；新增虚拟主机、消息桥、DPI、导航策略等 |
 | `internal/webview2/loader/` | 纯 Go 动态加载 `WebView2Loader.dll`（无 CGO） |
@@ -118,6 +120,8 @@ go build -trimpath -ldflags "-H windowsgui -s -w" -o bin\bpdl-ui.exe .\cmd\bpdl-
 `setProxy` / `setGenreSort` 由宿主**直接改写 YAML 配置并重启后端**（不依赖后端 RPC）；
 `stopDownloads` 同样是“杀掉后端 → 重新拉起”，用于立即停止整个下载队列。
 `checkUpdate` / `applyUpdate` 走 GitHub Release 更新器，进度通过 `{kind:"update"}` 消息推送。
+`getGenreCatalog` / `getLatestBySubgenres` 由宿主读取本地 OAuth token 直连 Beatport
+子曲风接口；token 不返回前端。子曲风筛选使用 `sub_genre_id`，不经过旧后端的单曲风参数。
 
 宿主 → 页面：
 
@@ -331,4 +335,22 @@ go build -trimpath -ldflags "-H windowsgui -s -w" -o bin\bpdl-ui.exe .\cmd\bpdl-
   点击更新 → 下载 hotfix → 备份 → 替换 → 自动重启为 v1.1.0；新 exe 的 SHA256 与
   Release hotfix 内的 exe 完全一致，`beatportdl-config.yml` 与
   `beatportdl-credentials.json` 的哈希前后不变。
+
+## 12. 子曲风独立表 / 启动自动刷新曲风
+
+- 旧后端 `getGenres` 只有平铺的 46 个曲风，没有子曲风；而 Beatport catalog API 的
+  `/catalog/genres/` 每个 genre 带 `sub_genres`。宿主新增 `catalog.go`：读取本地
+  `beatportdl-credentials.json` 的 OAuth `access_token`（不下发前端），按配置代理请求
+  API，得到 46 个曲风 / 127 个子曲风（按 genre 关联去重）。
+- 新增宿主动作 `getGenreCatalog`、`getLatestBySubgenres`。子曲风筛选直接走 API
+  `sub_genre_id`（旧后端只支持 `genre_name`，无法精确表达子曲风）；分页、日期、
+  tracks/releases、URL 去重与旧 RPC 返回形状保持一致。
+- UI 不做层级树：曲风 picker 增加 `曲风 / 子曲风` 两个 tab；子曲风是**独立平铺表**，
+  列头为“子曲风 / 所属曲风”。曲风与子曲风二选一，选一类时自动清空另一类。
+- 启动曲风加载：空数组/失败不再把 `genresLoaded` 永久设为 true；会按 1.2s/2.4s/3.6s
+  自动重试，启动 1.5s 后在后台/登录完成后再强制检查一次。手动“刷新曲风”仍保留。
+- 实测：宿主直连 API 拿到 46 个曲风 / 127 个子曲风；子曲风 `Acid` 通过
+  `getLatestBySubgenres` 返回 60 首；真实 UI 中表格、选中、`获取最新` 均正常。
+- 本轮只更新了 **本地 v1.1.0**（dist/test-deploy），**没有重新上传 GitHub Release**；
+  GitHub 上的 v1.1.0 资产仍是上一版。要发布这版子曲风功能需要重新生成资产并上传新版本。
 

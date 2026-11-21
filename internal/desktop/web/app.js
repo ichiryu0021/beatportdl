@@ -1,4 +1,4 @@
-﻿/* =============================================================================
+/* =============================================================================
    Beatport 下载器 · 桌面版前端
    -----------------------------------------------------------------------------
    与宿主 (Go + WebView2) 的全部通信都走 window.chrome.webview 消息桥：
@@ -195,6 +195,9 @@
     view: store.get('bpdl.view', 'discover'),
     genres: [],
     genresLoaded: false,
+    genresLoading: false,
+    genresWantRefresh: false,
+    genreRetries: 0,
     authReady: null,
     username: store.get('bpdl.username', ''),
     bootstrapped: false,
@@ -202,6 +205,8 @@
     discover: {
       kind: 'tracks',
       genres: [],
+      subgenres: [],
+      genreTab: 'genre',
       preset: 'latest',
       from: '',
       to: '',
@@ -259,6 +264,12 @@
       received: 0,
       total: 0,
     },
+    catalog: {
+      loaded: false,
+      loading: false,
+      error: '',
+      items: [],
+    },
     scheduler: {
       running: false,
       seconds: 86400,
@@ -283,6 +294,7 @@
     },
     navRail: store.get('bpdl.rail', false),
   };
+
 
   let dirty = new Set();
   let rafPending = false;
@@ -441,7 +453,8 @@
 
   async function afterLogin() {
     try {
-      await Promise.all([loadGenres(), loadSettings(), loadNetworkSettings()]);
+      S.genreRetries = 0;
+      await Promise.all([loadGenres(true, false), loadSettings(), loadNetworkSettings()]);
       await refreshScheduler();
       markDirty('chrome', 'discover', 'settings', 'scheduler');
       if (!S.discover.items.length && !S.discover.loading) loadDiscover(true);
@@ -526,7 +539,7 @@
   }
 
   function rowSignature(item, selected, index) {
-    return `${index}|${selected ? 1 : 0}|${item.url}|${item.title || item.name}|${item.genre || ''}|${item.artists || ''}`;
+    return `${index}|${selected ? 1 : 0}|${item.url}|${item.title || item.name}|${item.genre || ''}|${item.subgenre || ''}|${item.artists || ''}`;
   }
 
   function renderResultRow(node, item, index, listId) {
@@ -541,10 +554,12 @@
     if (mix) subParts.push(mix);
     if (item.id) subParts.push(`#${item.id}`);
     const genre = item.genre || '';
+    const subgenre = item.subgenre || '';
+    const genreText = subgenre ? `${subgenre} · ${genre}` : genre;
     const titleTag = listId === 'search' ? '' : typeTag(item);
     const genreCell = listId === 'search'
       ? `${typeTag(item) || '<span class="muted">曲目</span>'}`
-      : (genre ? `<span class="truncate">${escHtml(genre)}</span>` : '<span class="muted">—</span>');
+      : (genreText ? `<span class="truncate" title="${escHtml(genreText)}">${escHtml(genreText)}</span>` : '<span class="muted">—</span>');
     node.innerHTML = `
       <span class="cell-cb">${checkboxHtml(selected)}</span>
       <span class="cell-idx">${String(index + 1).padStart(2, '0')}</span>
@@ -1258,25 +1273,73 @@
     }
   }
 
-  async function loadGenres() {
-    if (S.genresLoaded) return;
+  async function loadGenres(force = false, notify = false) {
+    if (S.genresLoading) {
+      if (force) S.genresWantRefresh = true;
+      return;
+    }
+    if (S.genresLoaded && !force) return;
+    S.genresLoading = true;
     try {
       const res = await rpc('getGenres');
       const list = Array.isArray(res) ? res : [];
-      S.genres = list
+      const genres = list
         .map((g) => ({ name: (g && (g.name || g.Name)) || '', slug: (g && (g.slug || g.Slug)) || '' }))
         .filter((g) => g.name)
         .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
-      S.genresLoaded = true;
-      renderGenreList();
-      renderScheduler();
-      markDirty('chrome');
+      if (genres.length) {
+        S.genres = genres;
+        S.genresLoaded = true;
+        S.genreRetries = 0;
+        renderGenreList();
+        renderScheduler();
+        markDirty('chrome');
+      } else {
+        // An empty list is not a successful load: the backend may still be
+        // logging in or the proxy may be warming up. Keep the trigger honest
+        // and retry instead of permanently showing "没有匹配的曲风".
+        if (!S.genres.length) S.genresLoaded = false;
+        renderGenreList();
+        scheduleGenreRetry();
+        if (notify) toast('曲风列表为空，正在重试…', 'warn');
+      }
     } catch (err) {
-      S.genresLoaded = true;
+      if (!S.genres.length) S.genresLoaded = false;
       uiLog('warn', `加载曲风失败：${err.message}`);
-      toast(`加载曲风失败：${err.message}`, 'warn');
       renderGenreList();
+      scheduleGenreRetry();
+      if (notify) toast(`加载曲风失败：${err.message}`, 'warn');
+    } finally {
+      S.genresLoading = false;
+      if (S.genresWantRefresh) {
+        S.genresWantRefresh = false;
+        setTimeout(() => loadGenres(true, false), 0);
+      }
     }
+  }
+
+  function scheduleGenreRetry() {
+    if (S.genreRetries >= 3) {
+      S.genresLoaded = true;
+      renderGenreList();
+      return;
+    }
+    S.genreRetries += 1;
+    setTimeout(() => {
+      if (S.backend === 'ready' && !S.genres.length) loadGenres(true, false);
+    }, 1200 * S.genreRetries);
+  }
+
+  async function refreshGenresAfterStartup() {
+    // Make the startup check resilient: wait for the backend/auth handshake,
+    // then force one fetch if the normal bootstrap came back empty.
+    for (let i = 0; i < 40; i++) {
+      if (S.backend === 'ready' && S.authReady !== null) break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    if (S.genres.length) return;
+    S.genreRetries = 0;
+    await loadGenres(true, false);
   }
 
   async function loadSettings() {
@@ -1369,6 +1432,7 @@
     $('#genre-apply').addEventListener('click', () => toggleGenrePopover(false));
     $('#genre-clear').addEventListener('click', () => {
       list.genres = [];
+      list.subgenres = [];
       renderGenreList();
       updateGenreTrigger();
     });
@@ -1403,7 +1467,8 @@
     $('#topbar-actions')?.addEventListener('click', (e) => {
       if (e.target.closest('#top-refresh-genres')) {
         S.genresLoaded = false;
-        loadGenres();
+        S.genreRetries = 0;
+        loadGenres(true, true);
       }
     });
 
@@ -1470,14 +1535,102 @@
     }
   }
 
+  async function loadSubgenres(force = false) {
+    if (S.catalog.loading) return;
+    if (S.catalog.loaded && !force) return;
+    S.catalog.loading = true;
+    S.catalog.error = '';
+    renderGenreList();
+    try {
+      const res = await host('getGenreCatalog');
+      const list = (res && res.subgenres) || [];
+      S.catalog.items = list
+        .map((s) => ({
+          id: Number(s.id) || 0,
+          name: s.name || '',
+          slug: s.slug || '',
+          genreName: s.genreName || s.genre_name || '',
+          genreId: Number(s.genreId) || 0,
+        }))
+        .filter((s) => s.id && s.name)
+        .sort((a, b) => a.name.localeCompare(b.name, 'en'));
+      S.catalog.loaded = true;
+    } catch (err) {
+      S.catalog.error = err.message;
+      S.catalog.loaded = false;
+    } finally {
+      S.catalog.loading = false;
+      renderGenreList();
+    }
+  }
+
+  function updateGenreTabs() {
+    $$('#genre-tabs .genre-tab').forEach((btn) => {
+      const active = btn.dataset.genreTab === S.discover.genreTab;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    const search = $('#genre-search');
+    if (search) search.placeholder = S.discover.genreTab === 'subgenre' ? '搜索子曲风…' : '搜索曲风…';
+  }
+
+  function updateGenreFooter() {
+    const hint = $('#genre-hint');
+    if (!hint) return;
+    if (S.discover.genreTab === 'subgenre') {
+      const n = S.discover.subgenres.length;
+      hint.textContent = n ? `已选 ${n} 个子曲风` : '子曲风与曲风二选一';
+    } else {
+      const n = S.discover.genres.length;
+      hint.textContent = n ? `已选 ${n} 个曲风` : '可多选';
+    }
+  }
+
   function renderGenreList() {
     const wrap = $('#genre-list');
     if (!wrap) return;
+    updateGenreTabs();
+    updateGenreFooter();
     const keyword = ($('#genre-search').value || '').trim().toLowerCase();
+    if (S.discover.genreTab === 'subgenre') {
+      if (!S.catalog.loaded && !S.catalog.loading && !S.catalog.error) {
+        loadSubgenres();
+      }
+      if (S.catalog.loading) {
+        wrap.innerHTML = '<div class="log-empty">正在读取子曲风…</div>';
+        return;
+      }
+      if (S.catalog.error) {
+        wrap.innerHTML = `<div class="log-empty">加载子曲风失败：${escHtml(S.catalog.error)}<br><button class="btn tiny ghost" type="button" data-subgenre-retry>重试</button></div>`;
+        return;
+      }
+      const selected = new Set(S.discover.subgenres.map((s) => s.id));
+      const items = S.catalog.items.filter((s) => !keyword
+        || s.name.toLowerCase().includes(keyword)
+        || s.genreName.toLowerCase().includes(keyword));
+      if (!items.length) {
+        wrap.innerHTML = '<div class="log-empty">没有匹配的子曲风</div>';
+        return;
+      }
+      wrap.innerHTML = `<div class="subgenre-head"><span></span><span>子曲风</span><span>所属曲风</span></div>
+        ${items.map((s) => {
+          const on = selected.has(s.id);
+          return `<button class="subgenre-row" type="button" role="option" data-subgenre-id="${s.id}" aria-selected="${on}">
+            <span class="tick">${on ? icon('check') : ''}</span>
+            <span class="subgenre-name">${escHtml(s.name)}</span>
+            <span class="subgenre-parent" title="${escHtml(s.genreName)}">${escHtml(s.genreName)}</span>
+          </button>`;
+        }).join('')}`;
+      return;
+    }
     const selected = new Set(S.discover.genres);
+    if (!S.genres.length) {
+      wrap.innerHTML = `<div class="log-empty">${S.genresLoaded ? '没有匹配的曲风' : '正在加载曲风…'}</div>`;
+      return;
+    }
     const items = S.genres.filter((g) => !keyword || g.name.toLowerCase().includes(keyword));
     if (!items.length) {
-      wrap.innerHTML = `<div class="log-empty">${S.genresLoaded ? '没有匹配的曲风' : '正在加载曲风…'}</div>`;
+      wrap.innerHTML = '<div class="log-empty">没有匹配的曲风</div>';
       return;
     }
     wrap.innerHTML = items.map((g) => `
@@ -1487,13 +1640,45 @@
       </button>`).join('');
   }
 
+  $('#genre-tabs')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-genre-tab]');
+    if (!btn) return;
+    S.discover.genreTab = btn.dataset.genreTab === 'subgenre' ? 'subgenre' : 'genre';
+    if (S.discover.genreTab === 'subgenre') loadSubgenres();
+    else renderGenreList();
+    $('#genre-search')?.focus();
+  });
+
   $('#genre-list')?.addEventListener('click', (e) => {
-    const btn = e.target.closest('.genre-option');
+    if (e.target.closest('[data-subgenre-retry]')) {
+      loadSubgenres(true);
+      return;
+    }
+    const subBtn = e.target.closest('[data-subgenre-id]');
+    if (subBtn) {
+      const id = Number(subBtn.dataset.subgenreId);
+      const item = S.catalog.items.find((s) => s.id === id);
+      if (!item) return;
+      const at = S.discover.subgenres.findIndex((s) => s.id === id);
+      if (at >= 0) S.discover.subgenres.splice(at, 1);
+      else {
+        if (S.discover.genres.length) S.discover.genres = [];
+        S.discover.subgenres.push(item);
+      }
+      renderGenreList();
+      updateGenreTrigger();
+      return;
+    }
+    const btn = e.target.closest('[data-genre]');
     if (!btn) return;
     const name = btn.dataset.genre;
     const list = S.discover.genres;
     const at = list.indexOf(name);
-    if (at >= 0) list.splice(at, 1); else list.push(name);
+    if (at >= 0) list.splice(at, 1);
+    else {
+      if (S.discover.subgenres.length) S.discover.subgenres = [];
+      list.push(name);
+    }
     renderGenreList();
     updateGenreTrigger();
   });
@@ -1502,11 +1687,19 @@
     const trigger = $('#genre-trigger');
     const label = $('#genre-label');
     if (!trigger || !label) return;
-    const sel = S.discover.genres;
-    if (!sel.length) label.textContent = '全部曲风';
-    else if (sel.length === 1) label.textContent = sel[0];
-    else label.textContent = `${sel[0]} 等 ${sel.length} 个曲风`;
-    trigger.title = sel.length ? sel.join('、') : '全部曲风';
+    const subs = S.discover.subgenres;
+    const gens = S.discover.genres;
+    if (subs.length) {
+      label.textContent = subs.length === 1 ? subs[0].name : `${subs[0].name} 等 ${subs.length} 个子曲风`;
+      trigger.title = subs.map((s) => `${s.name}（${s.genreName}）`).join('、');
+    } else if (!gens.length) {
+      label.textContent = '全部曲风';
+      trigger.title = '全部曲风';
+    } else {
+      label.textContent = gens.length === 1 ? gens[0] : `${gens[0]} 等 ${gens.length} 个曲风`;
+      trigger.title = gens.join('、');
+    }
+    updateGenreFooter();
   }
 
   function applyDatePreset(preset) {
@@ -1558,14 +1751,21 @@
       page,
       per_page: 60,
     };
-    if (list.genres.length === 1) params.genre = list.genres[0];
-    else if (list.genres.length > 1) params.genres = list.genres.slice();
+    if (list.subgenres.length) {
+      params.ids = list.subgenres.map((s) => s.id);
+    } else if (list.genres.length === 1) {
+      params.genre = list.genres[0];
+    } else if (list.genres.length > 1) {
+      params.genres = list.genres.slice();
+    }
     if (list.preset !== 'latest') {
       params.date_from = list.from;
       params.date_to = list.to;
     }
     try {
-      const res = await rpc('getLatest', params);
+      const res = list.subgenres.length
+        ? await host('getLatestBySubgenres', { params }, 5 * 60 * 1000)
+        : await rpc('getLatest', params);
       const rows = (res && res.results) || [];
       const added = [];
       rows.forEach((raw) => {
@@ -1599,6 +1799,7 @@
       mix_name: raw.mix_name || '',
       artists: artists || '',
       genre: (raw.genre && raw.genre.name) || raw.genre || '',
+      subgenre: (raw.subgenre && raw.subgenre.name) || raw.subgenre || '',
       type: raw.type || (kind === 'releases' ? 'release' : 'track'),
       cover: raw.cover || raw.image || '',
     };
@@ -2999,6 +3200,14 @@
       Mock.start();
     }
     setTimeout(checkUpdatesOnStartup, 900);
+    setTimeout(refreshGenresAfterStartup, 1500);
+    if (params.get('genretab') === 'subgenre') {
+      setTimeout(() => {
+        toggleGenrePopover(true);
+        S.discover.genreTab = 'subgenre';
+        loadSubgenres();
+      }, 2200);
+    }
     if (params.get('updialog') === '1') {
       setTimeout(() => { if (S.update.hasUpdate) showUpdateDialog(); }, 1900);
     }
@@ -3020,6 +3229,7 @@
       for (let i = 0; i < 40 && S.discover.items.length === 0; i++) await wait(150);
       await wait(450);
       check('discover-loaded', S.discover.items.length > 0, String(S.discover.items.length));
+      check('genres-loaded', S.genres.length > 0, String(S.genres.length));
       check('artists-string', !String(S.discover.items[0] && S.discover.items[0].artists).includes('[object'),
         S.discover.items[0] && S.discover.items[0].artists);
 
@@ -3113,6 +3323,14 @@
       await wait(120);
       $('#genre-trigger').dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await wait(80);
+      const subTab = $('[data-genre-tab="subgenre"]');
+      if (subTab) {
+        subTab.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await wait(400);
+        check('subgenre-table', $$('#genre-list .subgenre-row').length > 0, String($$('#genre-list .subgenre-row').length));
+        $('[data-genre-tab="genre"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await wait(80);
+      }
       const genreBtn = $('#genre-list .genre-option');
       if (genreBtn) genreBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       check('genre-pick', S.discover.genres.length === 1, S.discover.genres.join(','));
@@ -3169,6 +3387,29 @@
 
     const MIXES = ['Original Mix', 'Extended Mix', 'Club Mix', 'Dub Mix', 'Radio Edit'];
 
+    const SUBGENRES = [
+      { id: 9001, name: 'Acid', genreName: 'Techno' },
+      { id: 9002, name: 'Peak Time', genreName: 'Techno' },
+      { id: 9003, name: 'Hypnotic', genreName: 'Techno' },
+      { id: 9004, name: 'Deep Tech', genreName: 'Minimal / Deep Tech' },
+      { id: 9005, name: 'Afro Melodic', genreName: 'Afro House' },
+      { id: 9006, name: 'Soulful', genreName: 'House' },
+      { id: 9007, name: 'Jackin', genreName: 'House' },
+      { id: 9008, name: 'Progressive', genreName: 'Progressive House' },
+      { id: 9009, name: 'Melodic', genreName: 'Melodic House & Techno' },
+      { id: 9010, name: 'Liquid', genreName: 'Drum & Bass' },
+      { id: 9011, name: 'Neurofunk', genreName: 'Drum & Bass' },
+      { id: 9012, name: 'Jump Up', genreName: 'Drum & Bass' },
+      { id: 9013, name: 'Deep Dubstep', genreName: '140 / Deep Dubstep / Grime' },
+      { id: 9014, name: 'Psytrance', genreName: 'Psy-Trance' },
+      { id: 9015, name: 'Uplifting', genreName: 'Trance' },
+      { id: 9016, name: 'Indie Dance', genreName: 'Indie Dance' },
+      { id: 9017, name: 'Nu Disco', genreName: 'Disco' },
+      { id: 9018, name: 'Amapiano', genreName: 'Amapiano' },
+      { id: 9019, name: 'Afrobeats', genreName: 'African' },
+      { id: 9020, name: 'Bassline', genreName: 'UK Garage / Bassline' },
+    ];
+
     function slug(s) {
       return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     }
@@ -3209,6 +3450,7 @@
     const allTracks = Array.from({ length: 120 }, (_, i) => makeTrack(i));
     const allReleases = Array.from({ length: 40 }, (_, i) => makeRelease(i));
     let onMessage = null;
+    let genreCalls = 0;
 
     function send(msg) {
       setTimeout(() => { if (onMessage) onMessage(msg); }, 80 + Math.random() * 90);
@@ -3262,7 +3504,29 @@
       const t = kind === 'rpc' ? 'rpc' : 'host';
       switch (msg.method || msg.action) {
         case 'authStatus': return reply(msg.id, t, { ready: location.search.indexOf('login=1') < 0 });
-        case 'getGenres': return reply(msg.id, t, GENRES.map((name) => ({ name, slug: slug(name) })));
+        case 'getGenres': {
+          genreCalls += 1;
+          if (location.search.includes('genresempty=1') && genreCalls === 1) {
+            return reply(msg.id, t, []);
+          }
+          return reply(msg.id, t, GENRES.map((name) => ({ name, slug: slug(name) })));
+        }
+        case 'getGenreCatalog':
+          return reply(msg.id, t, { genres: [], subgenres: SUBGENRES });
+        case 'getLatestBySubgenres': {
+          const p = msg.params || {};
+          const page = Number(p.page) || 1;
+          const per = Number(p.per_page) || 60;
+          const start = (page - 1) * per;
+          const items = allTracks.slice(start, start + per).map((it) => ({
+            url: it.url, id: it.id, name: it.name, title: it.title,
+            mix_name: it.mix_name, artists: it.artists, genre: it.genre, type: 'track',
+          }));
+          return reply(msg.id, t, {
+            results: items, page, per_page: per,
+            count: allTracks.length, has_more: start + per < allTracks.length,
+          });
+        }
         case 'getSettings': return reply(msg.id, t, {
           downloads_directory: 'C:/Users/Public/Downloads/BeatportDL',
           writable: true, quality: 'lossless', track_exists: 'skip',
