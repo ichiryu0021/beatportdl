@@ -326,4 +326,8 @@ go build -trimpath -ldflags "-H windowsgui -s -w" -o bin\bpdl-ui.exe .\cmd\bpdl-
 - GitHub 侧：按用户确认，保留 `ichiryu0021/beatportdl` 仓库与历史，清理全部旧
   Release/tag，推送新源码，创建 `v1.1.0` Release 并上传
   `bpdl-hotfix-v1.1.0.zip` 与 `bpdl-v1.1.0-full.zip`。
+- **端到端实测通过**：在隔离临时目录启动 v1.0.0（带更新器）→ 检查到 v1.1.0 →
+  点击更新 → 下载 hotfix → 备份 → 替换 → 自动重启为 v1.1.0；新 exe 的 SHA256 与
+  Release hotfix 内的 exe 完全一致，`beatportdl-config.yml` 与
+  `beatportdl-credentials.json` 的哈希前后不变。
 

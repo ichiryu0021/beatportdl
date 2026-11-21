@@ -1,4 +1,6 @@
-# BeatportDL
+# BeatportDL · WebView2 桌面版
+
+**v1.1.0** · Windows 10/11 x64 便携版 · Chromium / WebView2 界面 · 下载队列控制 · 代理 · 曲风分类 · GitHub 自动更新
 
 Beatport & Beatsource downloader (FLAC, AAC)
 
@@ -6,11 +8,49 @@ Beatport & Beatsource downloader (FLAC, AAC)
 
 ![Screenshot](/screenshots/main.png?raw=true "Screenshot")
 
+## 下载 / Download
+
+从 [最新 Release](https://github.com/ichiryu0021/beatportdl/releases/latest) 下载：
+
+- `bpdl-v1.1.0-full.zip` — 完整便携包（主程序 + 后端 + 运行库），推荐新用户。
+- `bpdl-hotfix-v1.1.0.zip` — 最小更新包，供已有 v1.1.0 文件结构的客户端使用。
+
+解压到普通文件夹后运行 `启动.bat` 或 `beatportdl_gui.exe`。便携包**不包含**账号、配置、`data/` 或 `logs/`，首次运行按提示登录。
+
+> **升级提示**：v1.0.0 及更早版本没有内置更新器，需要手动安装本版一次；从 v1.1.0 之后发布的版本支持应用内自动更新。
+
+## 功能
+
+- Chromium/WebView2 原生窗口，界面资源走应用内虚拟站点，不额外开放本地 UI 端口。
+- 下载队列：勾选/全选、暂停、继续、停止全部、删除所选，稳定排序和原地进度刷新。
+- 网络代理：http / https / socks5，API 与下载请求同时走代理。
+- 曲风分类：按主曲风或子曲风优先自动建立文件夹。
+- GitHub 自动更新：启动检查 Release，右上角提示新版本，支持 hotfix 与完整包回退。
+- 账号登录、定时任务、下载目录、命名模板、已存在文件策略等原有能力。
+
+## 从源码构建
+
+```powershell
+# 干净便携包（不含 config/credentials/data/logs）
+.\build-desktop.ps1 -Package -Version 1.1.0
+
+# 生成 GitHub Release 的 hotfix / full 资产
+.\build-update.ps1 -Version 1.1.0
+```
+
+- `build-desktop.ps1` 依赖 `bin\beatportdl.exe`（CGO/TagLib 后端）；Release 完整包已内置。
+- 更新器与发布细节见 [WORKLOG.md](WORKLOG.md)。
+- 前端自检：`index.html?selftest=1`（mock 桥）。
+
+## CLI / 后端配置
+
+原始 CLI/JSON-RPC 后端仍保留，可用于无界面运行与脚本调用。
+
 Setup
 ---
-1. [Download](https://github.com/unspok3n/beatportdl/releases/) or [build](#building) BeatportDL.
+1. [Download](https://github.com/ichiryu0021/beatportdl/releases/latest) or [build](#从源码构建) BeatportDL.
 
-     *Compiled binaries for Windows, macOS (amd64, arm64) and Linux (amd64, arm64) are available on the [Releases](https://github.com/unspok3n/beatportdl/releases) page.* \
+     *The portable Windows desktop build is attached to the Releases page.* \
      *Don't forget to set the execute permission on unix systems, e.g., chmod +x beatportdl-darwin-arm64*
 
 2. Run beatportdl (e.g. `./beatportdl-darwin-arm64`), then specify the:
