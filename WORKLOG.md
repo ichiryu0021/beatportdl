@@ -43,6 +43,8 @@
 | `internal/desktop/update_test.go` | 更新器纯逻辑单测（版本/资产/白名单/zip 安全/清单） |
 | `internal/desktop/catalog.go` | 读取缓存 OAuth token，拉取 Beatport 子曲风表并按 `sub_genre_id` 查询最新曲目 |
 | `internal/desktop/catalog_test.go` | 子曲风条目转换与数字解析单测 |
+| `internal/desktop/scheduler.go` | 宿主侧定时任务：多曲风 + 多子曲风扫描并投递下载队列 |
+| `internal/desktop/web/mecha.css` | 机能 · 工业终端主题覆盖层（默认主题） |
 | `internal/winui/` | Win32 窗口、暗色标题栏/DWM、IFileOpenDialog、ShellExecute、Job、单实例 |
 | `internal/webview2/` | 从 `jchv/go-webview2`（MIT）裁剪适配的 WebView2 COM 层；新增虚拟主机、消息桥、DPI、导航策略等 |
 | `internal/webview2/loader/` | 纯 Go 动态加载 `WebView2Loader.dll`（无 CGO） |
@@ -314,6 +316,8 @@ go build -trimpath -ldflags "-H windowsgui -s -w" -o bin\bpdl-ui.exe .\cmd\bpdl-
 
 - `build-update.ps1` 会校验 `dist\version.txt` 与 `-Version` 一致，防止 exe 版本和
   Release 版本不一致造成“更新后又提示同一版本”的循环。
+- **版本号规则**：只递增最后一位（`1.1.0 → 1.1.1 → 1.1.2`），不自动跳 minor/major；
+  需要大版本时由用户明确指定。
 - **首次升级必须手动装一次**：当前 v1.0.0 没有更新代码；装上本版（建议 1.1.0）后，
   以后的 v1.1.x 才会自动更新。GitHub 上现有最新 Release 是 v1.0.0（旧 Qt 包，且没有
   BPDL zip 资产），所以在发布 v1.1.0 之前真实界面不会出现提示。
@@ -345,12 +349,133 @@ go build -trimpath -ldflags "-H windowsgui -s -w" -o bin\bpdl-ui.exe .\cmd\bpdl-
 - 新增宿主动作 `getGenreCatalog`、`getLatestBySubgenres`。子曲风筛选直接走 API
   `sub_genre_id`（旧后端只支持 `genre_name`，无法精确表达子曲风）；分页、日期、
   tracks/releases、URL 去重与旧 RPC 返回形状保持一致。
-- UI 不做层级树：曲风 picker 增加 `曲风 / 子曲风` 两个 tab；子曲风是**独立平铺表**，
-  列头为“子曲风 / 所属曲风”。曲风与子曲风二选一，选一类时自动清空另一类。
+- UI 不做层级树：发现页曲风 picker 增加 `曲风 / 子曲风` 两个 tab；子曲风是
+  **独立平铺表**，列头为“子曲风 / 所属曲风”。发现页曲风与子曲风二选一；定时页
+  允许同时多选（见第 13 节）。
 - 启动曲风加载：空数组/失败不再把 `genresLoaded` 永久设为 true；会按 1.2s/2.4s/3.6s
-  自动重试，启动 1.5s 后在后台/登录完成后再强制检查一次。手动“刷新曲风”仍保留。
+  自动重试，启动 1.5s 后在后台/登录完成后再强制检查一次。顶栏的手动“刷新曲风”
+  按钮已移除，加载完全自动。
 - 实测：宿主直连 API 拿到 46 个曲风 / 127 个子曲风；子曲风 `Acid` 通过
   `getLatestBySubgenres` 返回 60 首；真实 UI 中表格、选中、`获取最新` 均正常。
 - 本轮只更新了 **本地 v1.1.0**（dist/test-deploy），**没有重新上传 GitHub Release**；
   GitHub 上的 v1.1.0 资产仍是上一版。要发布这版子曲风功能需要重新生成资产并上传新版本。
 
+## 13. 定时任务多曲风 / 子曲风
+
+- 旧后端 scheduler 只接受单个 `genre`，也不认识子曲风，无法直接做多选。新增
+  `internal/desktop/scheduler.go`：桌面宿主自己按间隔扫描，选择曲风时调用旧后端
+  `getLatest`（支持 `genres` 数组），选择子曲风时调用宿主 `catalog.Latest`
+  （`sub_genre_id`），两路结果按 URL 去重后调用后端 `download` 加入队列。
+- 宿主 scheduler 支持同时勾选曲风和子曲风，数量不设上限；每次扫描最多取 50 条，
+  重复项由后端 `skipped` 处理。日志/发现事件以 `events.batch` 发给前端，复用现有
+  `scheduler.found` 与日志区。
+- 定时页的 picker 改成与发现页同风格：`曲风 / 子曲风` 两个 tab、独立表格、搜索、
+  多选、已选数量；触发按钮显示“N 个曲风 + M 个子曲风”。启动/停止/状态全部走宿主
+  `startScheduler` / `stopScheduler` / `schedulerStatus`，不再使用旧后端的单曲风
+  scheduler。
+- 避免了真实启动验证造成自动下载；已验证 picker 的曲风/子曲风表格、跨 tab 多选和
+  “1 个曲风 + 1 个子曲风”标签。宿主 scheduler 编译通过。
+
+## 14. 机能 · 工业终端界面
+
+- 新增 `internal/desktop/web/mecha.css`，默认 `html[data-theme="mecha"]`；经典样式
+  仍由 `app.css` 原样承担，主题只覆盖机能态，不重写功能 DOM。
+- 侧栏改为编号模块：品牌块 `DL // 001`、`MODULE INDEX`、`01–05` 导航编号、等宽英文
+  副标、方形图标框、黄色左标尺、底部 `SYS // LOCAL ARCHIVE`；折叠后为 76px 图标轨。
+- 顶栏/页面标题：工业网格、顶部黄黑警示条、页面编号盒（01–05）、等宽 eyebrow、
+  无圆角、刻度下沿。
+- 卡片：全直角、发丝线、四角 L 形括号、3px 黄色标题标尺；按钮主操作为骨白实底，
+  hover 转信号黄；输入框/分段控件/表格/弹窗/日志/Toast 全部直角化。
+- 设置页新增「界面主题」卡（机能 / 经典），使用 `bpdl.theme` localStorage，首屏
+  inline 读取避免闪主题；`?theme=classic|mecha` 可用于本地预览。
+- 已在真实 WebView2 中切换机能/经典并验证显示；未启动任何定时下载测试。
+- 本轮仍**没有 push**，GitHub Release 未改动；本地版本仍为 v1.1.0。
+
+## 15. 无原生标题栏 / 侧栏精简 / 设置模块归一化
+
+- **无原生标题栏**：`winui` 主窗口改为 `WS_POPUP | WS_THICKFRAME | ...` + `WS_EX_APPWINDOW`，
+  保留系统缩放边框、任务栏和 Alt+Tab，但不绘制原生 caption。页面顶部新增 38px
+  `windowbar`：终端标识 + 最小化 / 最大化还原 / 关闭按钮。
+- 宿主新增 `windowDrag`、`windowMinimize`、`windowToggleMaximize`、`windowClose`
+  四个 bridge 动作；拖动通过 `WM_NCLBUTTONDOWN/HTCAPTION`，拖动、双击、边缘缩放
+  由 Win32 处理。关闭仍走 `WM_CLOSE`，保留正在下载时的 close veto。
+- **最大化**不用 `ShowWindow(SW_MAXIMIZE)`（popup 下不稳定），改为按 `MonitorFromWindow`
+  的工作区 `SetWindowPos`，并记录 normal rect；再次点击还原，关闭时保存正常尺寸与
+  maximized 状态。
+- **侧栏**去掉 5 个导航图标方框和“收起侧栏”按钮，保留 `01–05` 编号、中文名和等宽
+  英文副标；折叠态（Ctrl+B）只显示编号。导航文字不再 `overflow:hidden`，避免中英文
+  上下被裁切。
+- **按钮**：机能主题主操作从骨白底改为信号黄底 + 深字，包括获取最新、搜索、开始定时、
+  保存、下载队列筛选、子曲风优先等；hover 提升到亮黄。
+- **设置页**改为单列 1080px 模块轨：所有卡片同宽、内容高度、14px 节奏，没有行洞、
+  没有固定高度容器导致的裁切；主题预览、音质选项、segmented、按钮尺寸统一。
+- 实测：无原生标题栏启动正常；自定义窗口栏拖动位置变化；最大化到 3840×2160 工作区、
+  还原回 1412×958；配置/凭据哈希保持不变。
+- 本轮仍**没有 push**，GitHub Release 未改动。
+
+## 16. 机能 · 白灰主题
+
+- 采用 `data-theme="mecha"` + `data-mecha-variant="light"`：深/白共用机能结构，
+  白灰只覆盖色板、表面、边框和文字阴影；经典仍是 `data-theme="classic"`。
+- 白灰：纸白 `#eeede7`、面板 `#f8f6ef`、黑字 `#10120f`、灰标签 `#5b6158`，
+  信号色改为石墨灰 `#4f554f`；主按钮为浅灰底黑字，不再使用黄色。
+- 文字浮起：只使用石墨色 drop shadow（不添加白色描边/白边）；正文
+  `0 1px 2px rgba(16,18,15,.16)`，标题/导航/账号等
+  `0 3px 6px rgba(16,18,15,.28), 0 1px 2px rgba(...,.18)`；主按钮无文字阴影。
+- 侧栏字号加大：品牌 18px、导航 14px、后端状态 12.5px、账号名 14.5px。
+- 无原生标题栏的黑条：移除顶部警示斜纹，改成 NCCALCSIZE 全客户区 + 6px 主题色
+  WebView 内缩边框；DWM 边框/背景刷随主题切换，边缘缩放实测可用。
+- 白灰下重绘：工程纸网格、窗口栏、编号侧栏、卡片四角括号、表格、弹层、日志、
+  定时任务、设置主题卡；经典主题不受影响。
+- 设置页主题卡现在三选：`机能 · 工业终端` / `机能 · 白灰` / `经典 · 深色工作室`；
+  `bpdl.theme` 保存 `mecha|mecha-light|classic`，`?theme=light` 可预览。
+- 本轮仍**没有 push**，GitHub Release 未改动。
+
+
+## 17. 发现最新：每页 50/100/200 + 专辑封面
+
+- 后端 `getLatest` 把 `per_page` 限制在 ≤100，无法直接满足 200；发现页改为宿主直连
+  Beatport API 的 `getLatestDiscover`：`per_page` 支持 50/100/200，按 genre_id /
+  sub_genre_id 过滤，多个筛选分别请求后按 URL 去重；分页、日期与 `has_more` 保持
+  原返回形状。
+- 宿主把 `release.image.dynamic_uri`（曲目封面）或 release 自身 image 处理成
+  `300x300` 的 CDN URL，返回 `cover` 字段；前端 `<img loading="lazy">` 渲染，加载
+  失败回退渐变字母。
+- 发现页工具栏新增 `每页 50/100/200` 分段控件，选择保存到
+  `bpdl.discover.perPage`；下滑加载更多使用同一 `per_page`，切换后自动从第一页重载。
+- 真实 API 实测：`per_page=200` 返回 200 条且每首带 cover URL；真实 WebView2 行内
+  封面正常显示，200 首分页计数正确。
+- 本轮仍**没有 push**，GitHub Release 未改动。
+
+## 18. 最终视觉收尾
+
+- 去掉窗口外圈灰/白边框：WebView2 inset 归零，客户区铺满窗口；边缘缩放改由页面内
+  8 个透明 resize handle 触发 `WM_NCLBUTTONDOWN` 原生缩放循环，不再绘制主题边框。
+- 侧栏账号信息去掉头像方框和右侧图标，只保留账号名 + 已登录状态；整行可点击进入
+  设置/登录，Enter/Space 也可操作。
+- 发现页每页 50/100/200 与宿主直连 API 的 200 条分页、专辑封面均在真实 WebView2
+  验证；封面为 300×300，懒加载，失败回退字母。
+- 本轮仍**没有 push**，GitHub Release 未改动。
+
+## 19. 专辑封面四角括号
+
+- 每个封面加四角 L 形括号，`inset: 2px`；短臂 6px、1px 线。
+- 深色主题用信号黄；白灰主题用纸白 `mix-blend-mode: difference`，在深浅封面上自动
+  反相成可见的灰/黑线，不再额外加白边。
+- 只随封面显示，不改变行高/布局。
+- 本轮仍**没有 push**，GitHub Release 未改动。
+
+## 20. 封面四角括号修正为外扩
+
+- 四角括号改为封面外侧 2px：44px 外框内放 40px 封面，括号画在外框四角。
+- 深色主题信号黄；白灰主题石墨灰，边框不会被封面图片遮住。
+- 本轮仍**没有 push**，GitHub Release 未改动。
+
+## 21. v1.1.1 发布
+
+- 版本号按规则递增到 1.1.1；资源版本、exe 文件版本、`version.txt` 同步为 1.1.1。
+- 发布资产：`bpdl-hotfix-v1.1.1.zip`、`bpdl-v1.1.1-full.zip`；不包含配置、凭据、
+  `data/`、`logs/`。本地清洁打包保留用户文件。
+- 本版包含：机能深/白灰/经典三主题、无原生标题栏与透明边缘缩放、编号侧栏、
+  子曲风表、定时任务多曲风/子曲风多选、发现页 50/100/200、真实专辑封面与四角括号、
+  启动静默清理封面缓存。

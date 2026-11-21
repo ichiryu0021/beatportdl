@@ -42,6 +42,10 @@ type Window struct {
 	state   windowState
 	options Options
 
+	normalRect rect
+	maximized  bool
+	frameBrush uintptr
+
 	threadID uintptr
 	queueMu  sync.Mutex
 	queue    []func()
@@ -91,6 +95,17 @@ func wndProc(hwnd, message, wparam, lparam uintptr) uintptr {
 				X: int32(float64(w.minW) * w.scale),
 				Y: int32(float64(w.minH) * w.scale),
 			}
+			monitor, _, _ := procMonitorFromWindow.Call(hwnd, MonitorDefaultToNearest)
+			if monitor != 0 {
+				mi := monitorInfo{CbSize: uint32(unsafe.Sizeof(monitorInfo{}))}
+				if ok, _, _ := procGetMonitorInfoW.Call(monitor, uintptr(unsafe.Pointer(&mi))); ok != 0 {
+					mmi.PtMaxPosition = point{X: mi.RcWork.Left, Y: mi.RcWork.Top}
+					mmi.PtMaxSize = point{
+						X: mi.RcWork.Right - mi.RcWork.Left,
+						Y: mi.RcWork.Bottom - mi.RcWork.Top,
+					}
+				}
+			}
 			return 0
 		}
 	case WMSize:
@@ -122,7 +137,70 @@ func wndProc(hwnd, message, wparam, lparam uintptr) uintptr {
 			w.options.OnFocus()
 		}
 	case WMEraseBkgnd:
+		if w != nil {
+			brush := w.frameBrush
+			if brush == 0 {
+				brush = bgBrush
+			}
+			var cr rect
+			_, _, _ = procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&cr)))
+			_, _, _ = procFillRect.Call(wparam, uintptr(unsafe.Pointer(&cr)), brush)
+		}
 		return 1
+	case WMNCCalcSize:
+		if wparam != 0 {
+			return 0
+		}
+	case WMNCHitTest:
+		if w != nil {
+			if w.maximized {
+				return HTClient
+			}
+			x := int32(int16(loword(lparam)))
+			y := int32(int16(hiword(lparam)))
+			var wr rect
+			if ok, _, _ := procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&wr))); ok != 0 {
+				border := int32(6 * w.scale)
+				left := x < wr.Left+border
+				right := x >= wr.Right-border
+				top := y < wr.Top+border
+				bottom := y >= wr.Bottom-border
+				switch {
+				case top && left:
+					return HTTopLeft
+				case top && right:
+					return HTTopRight
+				case bottom && left:
+					return HTBottomLeft
+				case bottom && right:
+					return HTBottomRight
+				case left:
+					return HTLeft
+				case right:
+					return HTRight
+				case top:
+					return HTTop
+				case bottom:
+					return HTBottom
+				}
+			}
+		}
+		return HTClient
+	case WMNCPaint:
+		if w != nil {
+			brush := w.frameBrush
+			if brush == 0 {
+				brush = bgBrush
+			}
+			if hdc, _, _ := procGetWindowDC.Call(hwnd); hdc != 0 {
+				var wr rect
+				_, _, _ = procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&wr)))
+				fill := rect{0, 0, wr.Right - wr.Left, wr.Bottom - wr.Top}
+				_, _, _ = procFillRect.Call(hdc, uintptr(unsafe.Pointer(&fill)), brush)
+				_, _, _ = procReleaseDC.Call(hwnd, hdc)
+			}
+			return 0
+		}
 	case WMClose:
 		if w != nil && w.options.OnClose != nil && !w.options.OnClose() {
 			return 0
@@ -202,13 +280,13 @@ func workArea() rect {
 func adjustWindowRect(r *rect, dpi uint32) {
 	if ok, _, _ := procAdjustWindowRectExForDpi.Call(
 		uintptr(unsafe.Pointer(r)),
-		WSOverlappedWindow, 0, 0, uintptr(dpi),
+		AppWindowStyle, 0, WSExAppWindow, uintptr(dpi),
 	); ok != 0 {
 		return
 	}
 	_, _, _ = procAdjustWindowRectEx.Call(
 		uintptr(unsafe.Pointer(r)),
-		WSOverlappedWindow, 0, 0,
+		AppWindowStyle, 0, WSExAppWindow,
 	)
 }
 
@@ -280,10 +358,10 @@ func NewWindow(opts Options) (*Window, error) {
 
 	hInst, _, _ := procGetModuleHandleW.Call(0)
 	hwnd, _, err := procCreateWindowExW.Call(
-		0,
+		WSExAppWindow,
 		uintptr(unsafe.Pointer(utf16Ptr(className))),
 		uintptr(unsafe.Pointer(utf16Ptr(opts.Title))),
-		WSOverlappedWindow,
+		AppWindowStyle,
 		uintptr(x), uintptr(y),
 		uintptr(winW), uintptr(winH),
 		0, 0, hInst, 0,
@@ -350,7 +428,7 @@ func (w *Window) applyDarkFrame() {
 	_, _, _ = procDwmSetWindowAttribute.Call(w.hwnd, DWMWABorderColor, uintptr(unsafe.Pointer(&border)), 4)
 	_, _, _ = procDwmSetWindowAttribute.Call(w.hwnd, DWMWATextColor, uintptr(unsafe.Pointer(&text)), 4)
 
-	corner := uint32(DWMWCPRound)
+	corner := uint32(DWMWCPDoNotRound)
 	_, _, _ = procDwmSetWindowAttribute.Call(w.hwnd, DWMWAWindowCorner, uintptr(unsafe.Pointer(&corner)), 4)
 }
 
@@ -358,7 +436,9 @@ func (w *Window) applyDarkFrame() {
 // and brings it to the foreground.
 func (w *Window) Show() {
 	if w.state.Valid && w.state.Maximized {
-		_, _, _ = procShowWindow.Call(w.hwnd, SWMaximize)
+		_, _, _ = procShowWindow.Call(w.hwnd, SWShowNormal)
+		w.normalRect = rect{w.state.X, w.state.Y, w.state.X + w.state.W, w.state.Y + w.state.H}
+		w.maximizeToWorkArea()
 	} else {
 		_, _, _ = procShowWindow.Call(w.hwnd, SWShowNormal)
 	}
@@ -374,6 +454,124 @@ func (w *Window) Focus() {
 // Close posts a WM_CLOSE to the window.
 func (w *Window) Close() {
 	_, _, _ = procPostMessageW.Call(w.hwnd, WMClose, 0, 0)
+}
+
+// StartDrag begins a native window move from the custom title bar. The call is
+// marshalled to the UI thread because WM_NCLBUTTONDOWN enters a modal move loop.
+func (w *Window) StartDrag() {
+	w.Post(func() {
+		_, _, _ = procReleaseCapture.Call()
+		_, _, _ = procSendMessageW.Call(w.hwnd, WMNCLButtonDown, HTCAPTION, 0)
+	})
+}
+
+// SetAppearance switches the native frame between the dark and paper themes.
+// The popup window still has a resize frame, so its DWM border and class brush
+// must follow the in-page theme instead of staying dark.
+func (w *Window) SetAppearance(light bool) {
+	w.Post(func() {
+		dark := uint32(1)
+		border := colorRef(31, 41, 55)
+		caption := colorRef(11, 15, 20)
+		text := colorRef(230, 237, 247)
+		brushColor := colorRef(11, 15, 20)
+		if light {
+			dark = 0
+			border = colorRef(206, 204, 194)
+			caption = colorRef(246, 244, 236)
+			text = colorRef(16, 18, 15)
+			brushColor = colorRef(238, 237, 231)
+		}
+		_, _, _ = procDwmSetWindowAttribute.Call(
+			w.hwnd, DWMWAUseImmersiveDarkMode,
+			uintptr(unsafe.Pointer(&dark)), unsafe.Sizeof(dark),
+		)
+		_, _, _ = procDwmSetWindowAttribute.Call(w.hwnd, DWMWABorderColor, uintptr(unsafe.Pointer(&border)), 4)
+		_, _, _ = procDwmSetWindowAttribute.Call(w.hwnd, DWMWACaptionColor, uintptr(unsafe.Pointer(&caption)), 4)
+		_, _, _ = procDwmSetWindowAttribute.Call(w.hwnd, DWMWATextColor, uintptr(unsafe.Pointer(&text)), 4)
+		corner := uint32(DWMWCPDoNotRound)
+		_, _, _ = procDwmSetWindowAttribute.Call(w.hwnd, DWMWAWindowCorner, uintptr(unsafe.Pointer(&corner)), 4)
+
+		brush, _, _ := procCreateSolidBrush.Call(uintptr(brushColor))
+		if brush != 0 {
+			if w.frameBrush != 0 {
+				_, _, _ = procDeleteObject.Call(w.frameBrush)
+			}
+			w.frameBrush = brush
+			_, _, _ = procSetClassLongPtrW.Call(w.hwnd, GCLPBackground, brush)
+		}
+		_, _, _ = procSetWindowPos.Call(
+			w.hwnd, 0, 0, 0, 0, 0,
+			SWPNoMove|SWPNoSize|SWPNoZOrder|SWPNoActivate|SWPFrameChanged,
+		)
+		_, _, _ = procRedrawWindow.Call(
+			w.hwnd, 0, 0,
+			RDWInvalidate|RDWFrame|RDWAllChildren,
+		)
+	})
+}
+
+// StartResize starts a native sizing loop in the requested direction. The
+// invisible HTML edge handles call this instead of relying on a painted frame.
+func (w *Window) StartResize(hitTest uintptr) {
+	w.Post(func() {
+		if w.maximized {
+			return
+		}
+		_, _, _ = procReleaseCapture.Call()
+		_, _, _ = procSendMessageW.Call(w.hwnd, WMNCLButtonDown, hitTest, 0)
+	})
+}
+
+// ToggleMaximize restores a maximized window or maximizes a normal one.
+func (w *Window) ToggleMaximize() {
+	w.Post(func() {
+		if w.maximized {
+			r := w.normalRect
+			if r.Right > r.Left && r.Bottom > r.Top {
+				_, _, _ = procSetWindowPos.Call(
+					w.hwnd, 0,
+					uintptr(r.Left), uintptr(r.Top),
+					uintptr(r.Right-r.Left), uintptr(r.Bottom-r.Top),
+					SWPNoZOrder,
+				)
+			}
+			w.maximized = false
+			return
+		}
+		w.maximizeToWorkArea()
+	})
+}
+
+func (w *Window) maximizeToWorkArea() {
+	var wr rect
+	if ok, _, _ := procGetWindowRect.Call(w.hwnd, uintptr(unsafe.Pointer(&wr))); ok == 0 {
+		return
+	}
+	monitor, _, _ := procMonitorFromWindow.Call(w.hwnd, MonitorDefaultToNearest)
+	if monitor == 0 {
+		return
+	}
+	mi := monitorInfo{CbSize: uint32(unsafe.Sizeof(monitorInfo{}))}
+	if ok, _, _ := procGetMonitorInfoW.Call(monitor, uintptr(unsafe.Pointer(&mi))); ok == 0 {
+		return
+	}
+	w.normalRect = wr
+	w.maximized = true
+	_, _, _ = procSetWindowPos.Call(
+		w.hwnd, 0,
+		uintptr(mi.RcWork.Left), uintptr(mi.RcWork.Top),
+		uintptr(mi.RcWork.Right-mi.RcWork.Left),
+		uintptr(mi.RcWork.Bottom-mi.RcWork.Top),
+		SWPNoZOrder,
+	)
+}
+
+// Minimize minimizes the window.
+func (w *Window) Minimize() {
+	w.Post(func() {
+		_, _, _ = procShowWindow.Call(w.hwnd, SWMinimize)
+	})
 }
 
 // Post schedules fn on the UI thread. Safe to call from any goroutine.
@@ -418,6 +616,21 @@ func (w *Window) Run() {
 
 func (w *Window) saveState() {
 	if w.options.StateFile == "" {
+		return
+	}
+	if w.maximized && w.normalRect.Right > w.normalRect.Left && w.normalRect.Bottom > w.normalRect.Top {
+		data, err := json.Marshal(windowState{
+			X:         w.normalRect.Left,
+			Y:         w.normalRect.Top,
+			W:         w.normalRect.Right - w.normalRect.Left,
+			H:         w.normalRect.Bottom - w.normalRect.Top,
+			Maximized: true,
+			Valid:     true,
+		})
+		if err == nil {
+			_ = os.MkdirAll(filepath.Dir(w.options.StateFile), 0o755)
+			_ = os.WriteFile(w.options.StateFile, data, 0o644)
+		}
 		return
 	}
 	var wp windowPlacement

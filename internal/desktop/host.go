@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -47,6 +48,10 @@ type App struct {
 	shown atomic.Bool
 }
 
+func clearCoverCache(webViewData string) {
+	_ = os.RemoveAll(filepath.Join(webViewData, "EBWebView", "Default", "Cache"))
+}
+
 // Run starts the desktop shell and blocks until the window closes.
 func Run(cfg Config) error {
 	if cfg.Addr == "" {
@@ -56,6 +61,7 @@ func Run(cfg Config) error {
 	if err != nil {
 		return err
 	}
+	clearCoverCache(paths.WebViewData)
 	logger, closer := openLogger(paths.GUILog)
 	defer closer.Close()
 	winui.SetLogger(func(msg string) { logger.Printf("%s", msg) })
@@ -143,6 +149,7 @@ func (a *App) createWindow(uiDir string) error {
 	a.window = window
 
 	chromium := edge.NewChromium()
+	chromium.SetInset(0)
 	chromium.DataPath = a.paths.WebViewData
 	chromium.MessageCallback = func(raw string) { a.bridge.handleMessage(raw) }
 	chromium.NavigationStartingCallback = func(sender *edge.ICoreWebView2, args *edge.ICoreWebView2NavigationStartingEventArgs) {

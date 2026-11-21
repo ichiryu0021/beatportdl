@@ -5,7 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <title>Beatport 下载器</title>
+<script>
+(function () {
+  var theme = 'mecha';
+  try {
+    var raw = localStorage.getItem('bpdl.theme');
+    if (raw) theme = JSON.parse(raw);
+  } catch (e) {}
+  try {
+    var forcedTheme = new URLSearchParams(location.search).get('theme');
+    if (forcedTheme) theme = forcedTheme;
+  } catch (e) {}
+  if (theme === 'light' || theme === 'mecha-light') theme = 'mecha-light';
+  else if (theme !== 'classic') theme = 'mecha';
+  document.documentElement.dataset.theme = theme === 'classic' ? 'classic' : 'mecha';
+  document.documentElement.dataset.mechaVariant = theme === 'mecha-light' ? 'light' : 'dark';
+})();
+</script>
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="mecha.css">
 </head>
 <body>
 <svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
@@ -39,7 +57,22 @@
   <symbol id="i-logo" viewBox="0 0 32 32"><rect x="1" y="1" width="30" height="30" rx="8"/><path d="M16 7.5v11"/><path d="m10.5 14 5.5 5.5L21.5 14"/><path d="M9.5 24.5h13"/></symbol>
 </svg>
 
-<div class="app" id="app">
+<div class="app-shell" id="app-shell">
+  <header class="windowbar" id="windowbar">
+    <div class="win-brand">
+      <span class="win-signal"></span>
+      <strong>BEATPORT</strong>
+      <em>DOWNLOAD TERMINAL</em>
+    </div>
+    <div class="win-spacer"></div>
+    <div class="win-actions">
+      <button class="win-btn" id="win-min" type="button" title="最小化" aria-label="最小化"><span class="win-min-line"></span></button>
+      <button class="win-btn" id="win-max" type="button" title="最大化 / 还原" aria-label="最大化或还原"><span class="win-max-box"></span></button>
+      <button class="win-btn win-close" id="win-close" type="button" title="关闭" aria-label="关闭"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+  </header>
+
+  <div class="app" id="app">
   <aside class="sidebar" id="sidebar">
     <div class="brand">
       <span class="brand-mark"><svg class="ic"><use href="#i-logo"/></svg></span>
@@ -47,20 +80,20 @@
     </div>
 
     <nav class="nav" aria-label="主导航">
-      <button class="nav-item active" data-view="discover" type="button">
-        <svg class="ic"><use href="#i-compass"/></svg><span>发现最新</span>
+      <button class="nav-item active" data-view="discover" data-code="01" data-en="DISCOVER" type="button">
+        <svg class="ic"><use href="#i-compass"/></svg><span data-en="DISCOVER">发现最新</span>
       </button>
-      <button class="nav-item" data-view="search" type="button">
-        <svg class="ic"><use href="#i-search"/></svg><span>搜索</span>
+      <button class="nav-item" data-view="search" data-code="02" data-en="SEARCH" type="button">
+        <svg class="ic"><use href="#i-search"/></svg><span data-en="SEARCH">搜索</span>
       </button>
-      <button class="nav-item" data-view="scheduler" type="button">
-        <svg class="ic"><use href="#i-clock"/></svg><span>定时任务</span><i class="nav-dot" id="sched-dot" hidden></i>
+      <button class="nav-item" data-view="scheduler" data-code="03" data-en="SCHEDULER" type="button">
+        <svg class="ic"><use href="#i-clock"/></svg><span data-en="SCHEDULER">定时任务</span><i class="nav-dot" id="sched-dot" hidden></i>
       </button>
-      <button class="nav-item" data-view="downloads" type="button">
-        <svg class="ic"><use href="#i-download"/></svg><span>下载队列</span><i class="nav-badge" id="downloads-badge" hidden>0</i>
+      <button class="nav-item" data-view="downloads" data-code="04" data-en="TRANSFER" type="button">
+        <svg class="ic"><use href="#i-download"/></svg><span data-en="TRANSFER">下载队列</span><i class="nav-badge" id="downloads-badge" hidden>0</i>
       </button>
-      <button class="nav-item" data-view="settings" type="button">
-        <svg class="ic"><use href="#i-settings"/></svg><span>设置</span>
+      <button class="nav-item" data-view="settings" data-code="05" data-en="CONFIG" type="button">
+        <svg class="ic"><use href="#i-settings"/></svg><span data-en="CONFIG">设置</span>
       </button>
     </nav>
 
@@ -69,19 +102,12 @@
         <span class="pulse" id="backend-dot"></span>
         <span class="backend-label" id="backend-text">正在启动后端…</span>
       </button>
-      <div class="account" id="account-row">
-        <span class="avatar" id="account-avatar">B</span>
+      <div class="account" id="account-row" role="button" tabindex="0">
         <span class="account-meta">
           <strong id="account-name">未登录</strong>
           <em id="account-sub">Beatport 账号</em>
         </span>
-        <button class="icon-btn" id="account-action" type="button" title="登录">
-          <svg class="ic"><use href="#i-user"/></svg>
-        </button>
       </div>
-      <button class="collapse-btn" id="collapse-btn" type="button" title="收起侧栏 (Ctrl+B)">
-        <svg class="ic"><use href="#i-panel"/></svg><span>收起侧栏</span>
-      </button>
     </div>
   </aside>
 
@@ -171,6 +197,12 @@
               </button>
               <span class="hint">提示：结果单击勾选，Shift 连选，Ctrl+A 全选</span>
               <span class="spacer"></span>
+              <span class="page-size-label">每页</span>
+              <div class="segmented page-size-seg" id="discover-page-size">
+                <button class="seg active" data-size="50" type="button">50</button>
+                <button class="seg" data-size="100" type="button">100</button>
+                <button class="seg" data-size="200" type="button">200</button>
+              </div>
               <span class="count-pill" id="discover-count">0 首</span>
               <button class="btn small ghost" id="discover-select-all" type="button">全选</button>
               <button class="btn small ghost" id="discover-clear" type="button">清空选择</button>
@@ -261,14 +293,30 @@
             </div>
 
             <div class="form-block">
-              <span class="field-label">限定曲风</span>
-              <div class="select-wrap">
-                <select id="sched-genre" class="control">
-                  <option value="">全部曲风</option>
-                </select>
-                <svg class="ic chev"><use href="#i-chevron"/></svg>
+              <span class="field-label">限定曲风 / 子曲风</span>
+              <div class="field">
+                <button class="control trigger" id="sched-genre-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="sched-genre-label">全部曲风</span>
+                  <svg class="ic chev"><use href="#i-chevron"/></svg>
+                </button>
+                <div class="popover genre-popover" id="sched-genre-popover" hidden>
+                  <div class="genre-tabs" id="sched-genre-tabs" role="tablist">
+                    <button class="genre-tab active" data-sched-genre-tab="genre" type="button" role="tab" aria-selected="true">曲风</button>
+                    <button class="genre-tab" data-sched-genre-tab="subgenre" type="button" role="tab" aria-selected="false">子曲风</button>
+                  </div>
+                  <div class="popover-search">
+                    <svg class="ic"><use href="#i-search"/></svg>
+                    <input id="sched-genre-search" type="text" placeholder="搜索曲风…" autocomplete="off">
+                  </div>
+                  <div class="genre-list" id="sched-genre-list" role="listbox" aria-multiselectable="true"></div>
+                  <div class="popover-foot">
+                    <button class="btn tiny ghost" id="sched-genre-clear" type="button">清空</button>
+                    <span class="muted tiny" id="sched-genre-hint">可多选</span>
+                    <button class="btn tiny primary" id="sched-genre-apply" type="button">完成</button>
+                  </div>
+                </div>
               </div>
-              <p class="hint">留空表示扫描全站最新发布。</p>
+              <p class="hint">留空表示扫描全站；曲风和子曲风都可多选。</p>
             </div>
 
             <div class="sched-note">
@@ -352,6 +400,27 @@
       <!-- 设置 -->
       <section class="view" data-view="settings" hidden>
         <div class="view-scroll settings-grid">
+          <div class="card settings-card theme-settings-card">
+            <div class="card-head">
+              <div><h2>界面主题</h2><p class="muted">工业终端、白灰浮字或经典深色，切换立即生效并记住选择。</p></div>
+              <span class="theme-current" id="theme-current">MECHANICAL</span>
+            </div>
+            <div class="theme-grid" id="theme-grid">
+              <button class="theme-choice" data-theme-choice="mecha" type="button" aria-pressed="true">
+                <span class="theme-shot theme-shot-mecha"><i></i><b></b><b></b><b></b><em></em></span>
+                <span class="theme-choice-text"><strong>机能 · 工业终端</strong><em>MECHANICAL / DARK</em></span>
+              </button>
+              <button class="theme-choice" data-theme-choice="mecha-light" type="button" aria-pressed="false">
+                <span class="theme-shot theme-shot-light"><i></i><b></b><b></b><b></b><em></em></span>
+                <span class="theme-choice-text"><strong>机能 · 白灰</strong><em>MECHANICAL / LIGHT</em></span>
+              </button>
+              <button class="theme-choice" data-theme-choice="classic" type="button" aria-pressed="false">
+                <span class="theme-shot theme-shot-classic"><i></i><b></b><b></b><b></b><em></em></span>
+                <span class="theme-choice-text"><strong>经典 · 深色工作室</strong><em>CLASSIC / STUDIO</em></span>
+              </button>
+            </div>
+          </div>
+
           <div class="card settings-card">
             <div class="card-head"><div><h2>音频格式</h2><p class="muted">切换后对后续下载立即生效。</p></div></div>
             <div class="option-grid quality-grid" id="quality-grid">
@@ -479,6 +548,18 @@
 
     </div>
   </main>
+</div>
+</div>
+
+<div class="resize-handles" id="resize-handles" aria-hidden="true">
+  <div class="resize-handle resize-n" data-resize="top"></div>
+  <div class="resize-handle resize-s" data-resize="bottom"></div>
+  <div class="resize-handle resize-w" data-resize="left"></div>
+  <div class="resize-handle resize-e" data-resize="right"></div>
+  <div class="resize-handle resize-nw" data-resize="top-left"></div>
+  <div class="resize-handle resize-ne" data-resize="top-right"></div>
+  <div class="resize-handle resize-sw" data-resize="bottom-left"></div>
+  <div class="resize-handle resize-se" data-resize="bottom-right"></div>
 </div>
 
 <div class="selection-dock" id="selection-dock" hidden>

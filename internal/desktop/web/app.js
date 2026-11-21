@@ -204,6 +204,10 @@
     bootstrapLoading: false,
     discover: {
       kind: 'tracks',
+      perPage: (() => {
+        const saved = Number(store.get('bpdl.discover.perPage', 50));
+        return [50, 100, 200].includes(saved) ? saved : 50;
+      })(),
       genres: [],
       subgenres: [],
       genreTab: 'genre',
@@ -273,7 +277,9 @@
     scheduler: {
       running: false,
       seconds: 86400,
-      genre: '',
+      genres: [],
+      subgenres: [],
+      genreTab: 'genre',
       logs: [],
     },
     downloads: {
@@ -293,7 +299,37 @@
       muted: new Set(),
     },
     navRail: store.get('bpdl.rail', false),
+    theme: (() => {
+      const forced = new URLSearchParams(location.search).get('theme');
+      if (forced) return normalizeTheme(forced);
+      return normalizeTheme(store.get('bpdl.theme', 'mecha'));
+    })(),
   };
+
+  function normalizeTheme(theme) {
+    if (theme === 'classic') return 'classic';
+    if (theme === 'mecha-light' || theme === 'light') return 'mecha-light';
+    return 'mecha';
+  }
+
+  function applyTheme(theme, persist = true) {
+    const next = normalizeTheme(theme);
+    const light = next === 'mecha-light';
+    document.documentElement.dataset.theme = next === 'classic' ? 'classic' : 'mecha';
+    document.documentElement.dataset.mechaVariant = light ? 'light' : 'dark';
+    S.theme = next;
+    if (persist) store.set('bpdl.theme', next);
+    $$('#theme-grid .theme-choice').forEach((btn) => {
+      const on = btn.dataset.themeChoice === next;
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    const current = $('#theme-current');
+    if (current) {
+      current.textContent = next === 'mecha-light' ? 'MECHANICAL LIGHT' : next === 'classic' ? 'CLASSIC' : 'MECHANICAL';
+    }
+    host('setWindowAppearance', { params: { light: light } }).catch(() => {});
+  }
 
 
   let dirty = new Set();
@@ -539,7 +575,7 @@
   }
 
   function rowSignature(item, selected, index) {
-    return `${index}|${selected ? 1 : 0}|${item.url}|${item.title || item.name}|${item.genre || ''}|${item.subgenre || ''}|${item.artists || ''}`;
+    return `${index}|${selected ? 1 : 0}|${item.url}|${item.title || item.name}|${item.genre || ''}|${item.subgenre || ''}|${item.artists || ''}|${item.cover || ''}`;
   }
 
   function renderResultRow(node, item, index, listId) {
@@ -564,7 +600,9 @@
       <span class="cell-cb">${checkboxHtml(selected)}</span>
       <span class="cell-idx">${String(index + 1).padStart(2, '0')}</span>
       <span class="track-cell">
-        <span class="cover" style="${coverStyle(item.url || name)}">${item.cover ? `<img alt="" src="${escHtml(item.cover)}">` : `<span class="cover-letter">${escHtml(coverLetter(name))}</span>`}</span>
+        <span class="cover-wrap">
+          <span class="cover" style="${coverStyle(item.url || name)}">${item.cover ? `<img alt="" src="${escHtml(item.cover)}" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">` : `<span class="cover-letter">${escHtml(coverLetter(name))}</span>`}</span>
+        </span>
         <span class="track-text">
           <strong>${escHtml(name)}${titleTag}</strong>
           <em>${escHtml(subParts.join(' · '))}</em>
@@ -788,6 +826,7 @@
   function setView(view) {
     if (!PAGE_META[view]) return;
     S.view = view;
+    document.body.dataset.view = view;
     store.set('bpdl.view', view);
     $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
     $$('.view').forEach((v) => { v.hidden = v.dataset.view !== view; });
@@ -824,11 +863,7 @@
     // DOM (and drop focus); only touch it when it actually changes.
     let sig = S.view;
     let html = '';
-    if (S.view === 'discover') {
-      sig += `|${S.genres.length}`;
-      html = `<span class="count-pill" id="top-genre-count">${S.genres.length || 0} 个曲风</span>
-        <button class="btn small ghost" id="top-refresh-genres" type="button">${icon('refresh')}<span>刷新曲风</span></button>`;
-    } else if (S.view === 'downloads') {
+    if (S.view === 'downloads') {
       const active = activeDownloadCount();
       const openTasks = openTaskCount();
       sig += `|${active}|${openTasks}|${S.downloads.pausedAll ? 1 : 0}`;
@@ -1157,6 +1192,29 @@
 
   /* ---------------------------------------------------------------- chrome */
 
+  function setupWindowbar() {
+    const bar = $('#windowbar');
+    if (!bar) return;
+    bar.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 || e.target.closest('.win-actions')) return;
+      host('windowDrag').catch(() => {});
+    });
+    bar.addEventListener('dblclick', (e) => {
+      if (e.target.closest('.win-actions')) return;
+      host('windowToggleMaximize').catch(() => {});
+    });
+    $$('.resize-handle').forEach((handle) => {
+      handle.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        host('windowResizeStart', { params: { direction: handle.dataset.resize } }).catch(() => {});
+      });
+    });
+    $('#win-min')?.addEventListener('click', () => host('windowMinimize').catch(() => {}));
+    $('#win-max')?.addEventListener('click', () => host('windowToggleMaximize').catch(() => {}));
+    $('#win-close')?.addEventListener('click', () => host('windowClose').catch(() => {}));
+  }
+
   function renderChrome() {
     const pill = $('#backend-pill');
     if (pill) {
@@ -1182,11 +1240,9 @@
 
     const accountName = $('#account-name');
     const accountSub = $('#account-sub');
-    const avatar = $('#account-avatar');
     const name = S.username || 'Beatport 账号';
     if (accountName) accountName.textContent = S.authReady ? name : '未登录';
     if (accountSub) accountSub.textContent = S.authReady ? '已登录' : '点击登录账号';
-    if (avatar) avatar.textContent = (name[0] || 'B').toUpperCase();
     const accountBtn = $('#account-action');
     if (accountBtn) {
       accountBtn.title = S.authReady ? '账号设置' : '登录';
@@ -1441,6 +1497,10 @@
       if (pop && !pop.hidden && !pop.contains(e.target) && e.target.id !== 'genre-trigger' && !e.target.closest('#genre-trigger')) {
         toggleGenrePopover(false);
       }
+      const sched = $('#sched-genre-popover');
+      if (sched && !sched.hidden && !sched.contains(e.target) && !e.target.closest('#sched-genre-trigger')) {
+        toggleSchedulerGenrePopover(false);
+      }
     });
 
     $('#date-chips').addEventListener('click', (e) => {
@@ -1461,16 +1521,20 @@
     });
 
     $('#discover-load').addEventListener('click', () => loadDiscover(true));
+    $('#discover-page-size').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-size]');
+      if (!btn) return;
+      const size = Number(btn.dataset.size);
+      if (![50, 100, 200].includes(size) || size === S.discover.perPage) return;
+      S.discover.perPage = size;
+      store.set('bpdl.discover.perPage', size);
+      $('#discover-scroll').scrollTop = 0;
+      renderDiscover();
+      loadDiscover(true);
+    });
     $('#discover-select-all').addEventListener('click', () => setAllSelected('discover', true));
     $('#discover-clear').addEventListener('click', () => setAllSelected('discover', false));
     $('#discover-check-all').addEventListener('change', (e) => setAllSelected('discover', e.target.checked));
-    $('#topbar-actions')?.addEventListener('click', (e) => {
-      if (e.target.closest('#top-refresh-genres')) {
-        S.genresLoaded = false;
-        S.genreRetries = 0;
-        loadGenres(true, true);
-      }
-    });
 
     const scroll = $('#discover-scroll');
     scroll.addEventListener('scroll', () => {
@@ -1541,6 +1605,7 @@
     S.catalog.loading = true;
     S.catalog.error = '';
     renderGenreList();
+    renderSchedulerGenrePicker();
     try {
       const res = await host('getGenreCatalog');
       const list = (res && res.subgenres) || [];
@@ -1561,6 +1626,7 @@
     } finally {
       S.catalog.loading = false;
       renderGenreList();
+      renderSchedulerGenrePicker();
     }
   }
 
@@ -1749,13 +1815,11 @@
     const params = {
       kind: list.kind,
       page,
-      per_page: 60,
+      per_page: list.perPage,
     };
     if (list.subgenres.length) {
-      params.ids = list.subgenres.map((s) => s.id);
-    } else if (list.genres.length === 1) {
-      params.genre = list.genres[0];
-    } else if (list.genres.length > 1) {
+      params.subgenre_ids = list.subgenres.map((s) => s.id);
+    } else if (list.genres.length) {
       params.genres = list.genres.slice();
     }
     if (list.preset !== 'latest') {
@@ -1763,9 +1827,7 @@
       params.date_to = list.to;
     }
     try {
-      const res = list.subgenres.length
-        ? await host('getLatestBySubgenres', { params }, 5 * 60 * 1000)
-        : await rpc('getLatest', params);
+      const res = await host('getLatestDiscover', { params }, 5 * 60 * 1000);
       const rows = (res && res.results) || [];
       const added = [];
       rows.forEach((raw) => {
@@ -1826,6 +1888,9 @@
       const sel = selectedCount('discover');
       count.textContent = `${list.items.length} 首${sel ? ` · 已选 ${sel}` : ''}`;
     }
+    $$('#discover-page-size .seg').forEach((btn) => {
+      btn.classList.toggle('active', Number(btn.dataset.size) === list.perPage);
+    });
     const state = $('#discover-state');
     if (state) {
       if (list.loading && !list.items.length) {
@@ -2658,27 +2723,18 @@
     if (noteTitle) noteTitle.textContent = st.running ? `运行中 · 每${intervalLabel}扫描一次` : '等待启动';
     const noteText = $('#sched-note-text');
     if (noteText) {
+      const parts = [];
+      if (st.genres.length) parts.push(`${st.genres.length} 个曲风`);
+      if (st.subgenres.length) parts.push(`${st.subgenres.length} 个子曲风`);
+      const target = parts.length ? parts.join(' + ') : '全站';
       noteText.textContent = st.running
-        ? `正在持续追踪${st.genre ? `「${st.genre}」` : '全站'}最新发布，发现的新曲目会自动加入下载队列。`
+        ? `正在持续追踪${target}最新发布，发现的新曲目会自动加入下载队列。`
         : '启动后会按设定间隔扫描 Beatport 最新发布，并自动跳过已存在的文件。';
     }
     $$('#sched-intervals .option').forEach((btn) => {
       btn.classList.toggle('active', Number(btn.dataset.seconds) === st.seconds);
     });
-    const select = $('#sched-genre');
-    if (select) {
-      if (select.dataset.ready !== '1') {
-        const current = st.genre;
-        const opts = ['<option value="">全部曲风</option>'].concat(
-          S.genres.map((g) => `<option value="${escHtml(g.name)}">${escHtml(g.name)}</option>`)
-        );
-        select.innerHTML = opts.join('');
-        select.dataset.ready = '1';
-        select.value = current || '';
-      } else if (select.value !== (st.genre || '')) {
-        select.value = st.genre || '';
-      }
-    }
+    renderSchedulerGenrePicker();
     const log = $('#sched-log');
     if (log) {
       if (!st.logs.length) {
@@ -2692,9 +2748,106 @@
     }
   }
 
+  function toggleSchedulerGenrePopover(force) {
+    const pop = $('#sched-genre-popover');
+    const trigger = $('#sched-genre-trigger');
+    if (!pop || !trigger) return;
+    const open = typeof force === 'boolean' ? force : pop.hidden;
+    pop.hidden = !open;
+    trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+      renderSchedulerGenrePicker();
+      if (S.scheduler.genreTab === 'subgenre') loadSubgenres();
+    }
+  }
+
+  function updateSchedulerGenreTrigger() {
+    const st = S.scheduler;
+    const label = $('#sched-genre-label');
+    if (label) {
+      const g = st.genres.length;
+      const sub = st.subgenres.length;
+      if (!g && !sub) label.textContent = '全部曲风';
+      else if (g && !sub) label.textContent = g === 1 ? st.genres[0] : `${st.genres[0]} 等 ${g} 个曲风`;
+      else if (!g && sub) label.textContent = sub === 1 ? st.subgenres[0].name : `${st.subgenres[0].name} 等 ${sub} 个子曲风`;
+      else label.textContent = `${g} 个曲风 + ${sub} 个子曲风`;
+    }
+    const trigger = $('#sched-genre-trigger');
+    if (trigger) {
+      const titles = st.genres.concat(st.subgenres.map((s) => `${s.name}（${s.genreName}）`));
+      trigger.title = titles.length ? titles.join('、') : '全部曲风';
+    }
+    $$('#sched-genre-tabs .genre-tab').forEach((btn) => {
+      const active = btn.dataset.schedGenreTab === st.genreTab;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    const search = $('#sched-genre-search');
+    if (search) search.placeholder = st.genreTab === 'subgenre' ? '搜索子曲风…' : '搜索曲风…';
+    const hint = $('#sched-genre-hint');
+    if (hint) {
+      const n = st.genreTab === 'subgenre' ? st.subgenres.length : st.genres.length;
+      hint.textContent = n ? `已选 ${n} 个${st.genreTab === 'subgenre' ? '子曲风' : '曲风'}` : '可多选';
+    }
+  }
+
+  function renderSchedulerGenrePicker() {
+    updateSchedulerGenreTrigger();
+    const pop = $('#sched-genre-popover');
+    if (!pop || pop.hidden) return;
+    const wrap = $('#sched-genre-list');
+    if (!wrap) return;
+    const st = S.scheduler;
+    const keyword = ($('#sched-genre-search').value || '').trim().toLowerCase();
+    if (st.genreTab === 'subgenre') {
+      if (!S.catalog.loaded && !S.catalog.loading && !S.catalog.error) loadSubgenres();
+      if (S.catalog.loading) {
+        wrap.innerHTML = '<div class="log-empty">正在读取子曲风…</div>';
+        return;
+      }
+      if (S.catalog.error) {
+        wrap.innerHTML = `<div class="log-empty">加载子曲风失败：${escHtml(S.catalog.error)}<br><button class="btn tiny ghost" type="button" data-sched-subgenre-retry>重试</button></div>`;
+        return;
+      }
+      const selected = new Set(st.subgenres.map((s) => s.id));
+      const items = S.catalog.items.filter((s) => !keyword
+        || s.name.toLowerCase().includes(keyword)
+        || s.genreName.toLowerCase().includes(keyword));
+      if (!items.length) {
+        wrap.innerHTML = '<div class="log-empty">没有匹配的子曲风</div>';
+        return;
+      }
+      wrap.innerHTML = `<div class="subgenre-head"><span></span><span>子曲风</span><span>所属曲风</span></div>
+        ${items.map((s) => {
+          const on = selected.has(s.id);
+          return `<button class="subgenre-row" type="button" role="option" data-sched-subgenre-id="${s.id}" aria-selected="${on}">
+            <span class="tick">${on ? icon('check') : ''}</span>
+            <span class="subgenre-name">${escHtml(s.name)}</span>
+            <span class="subgenre-parent" title="${escHtml(s.genreName)}">${escHtml(s.genreName)}</span>
+          </button>`;
+        }).join('')}`;
+      return;
+    }
+    const selected = new Set(st.genres);
+    if (!S.genres.length) {
+      wrap.innerHTML = `<div class="log-empty">${S.genresLoaded ? '没有匹配的曲风' : '正在加载曲风…'}</div>`;
+      return;
+    }
+    const items = S.genres.filter((g) => !keyword || g.name.toLowerCase().includes(keyword));
+    if (!items.length) {
+      wrap.innerHTML = '<div class="log-empty">没有匹配的曲风</div>';
+      return;
+    }
+    wrap.innerHTML = items.map((g) => `
+      <button class="genre-option" type="button" role="option" data-sched-genre="${escHtml(g.name)}" aria-selected="${selected.has(g.name)}">
+        <span class="tick">${selected.has(g.name) ? icon('check') : ''}</span>
+        <span>${escHtml(g.name)}</span>
+      </button>`).join('');
+  }
+
   async function refreshScheduler() {
     try {
-      const res = await rpc('schedulerStatus');
+      const res = await host('schedulerStatus');
       S.scheduler.running = !!(res && res.running);
       markDirty('scheduler', 'chrome');
     } catch (err) {
@@ -2709,7 +2862,49 @@
       S.scheduler.seconds = Number(btn.dataset.seconds);
       renderScheduler();
     });
-    $('#sched-genre').addEventListener('change', (e) => { S.scheduler.genre = e.target.value; });
+    $('#sched-genre-trigger').addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleSchedulerGenrePopover();
+    });
+    $('#sched-genre-tabs').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-sched-genre-tab]');
+      if (!btn) return;
+      S.scheduler.genreTab = btn.dataset.schedGenreTab === 'subgenre' ? 'subgenre' : 'genre';
+      renderSchedulerGenrePicker();
+      if (S.scheduler.genreTab === 'subgenre') loadSubgenres();
+      $('#sched-genre-search')?.focus();
+    });
+    $('#sched-genre-search').addEventListener('input', renderSchedulerGenrePicker);
+    $('#sched-genre-list').addEventListener('click', (e) => {
+      if (e.target.closest('[data-sched-subgenre-retry]')) {
+        loadSubgenres(true);
+        return;
+      }
+      const subBtn = e.target.closest('[data-sched-subgenre-id]');
+      if (subBtn) {
+        const id = Number(subBtn.dataset.schedSubgenreId);
+        const item = S.catalog.items.find((s) => s.id === id);
+        if (!item) return;
+        const at = S.scheduler.subgenres.findIndex((s) => s.id === id);
+        if (at >= 0) S.scheduler.subgenres.splice(at, 1);
+        else S.scheduler.subgenres.push(item);
+        renderSchedulerGenrePicker();
+        return;
+      }
+      const genreBtn = e.target.closest('[data-sched-genre]');
+      if (!genreBtn) return;
+      const name = genreBtn.dataset.schedGenre;
+      const at = S.scheduler.genres.indexOf(name);
+      if (at >= 0) S.scheduler.genres.splice(at, 1);
+      else S.scheduler.genres.push(name);
+      renderSchedulerGenrePicker();
+    });
+    $('#sched-genre-clear').addEventListener('click', () => {
+      S.scheduler.genres = [];
+      S.scheduler.subgenres = [];
+      renderSchedulerGenrePicker();
+    });
+    $('#sched-genre-apply').addEventListener('click', () => toggleSchedulerGenrePopover(false));
     $('#sched-log-clear').addEventListener('click', () => {
       S.scheduler.logs = [];
       renderScheduler();
@@ -2718,13 +2913,17 @@
       const btn = $('#sched-start');
       btn.disabled = true;
       try {
-        const params = { interval_seconds: S.scheduler.seconds };
-        const genre = $('#sched-genre').value;
-        if (genre) params.genre = genre;
-        S.scheduler.genre = genre;
-        await rpc('startScheduler', params);
+        const payload = {
+          interval_seconds: S.scheduler.seconds,
+          genres: S.scheduler.genres.slice(),
+          subgenre_ids: S.scheduler.subgenres.map((s) => s.id),
+        };
+        await host('startScheduler', { params: payload }, 90 * 1000);
         S.scheduler.running = true;
-        pushLog('定时任务已启动', 'accent');
+        const target = payload.genres.length || payload.subgenre_ids.length
+          ? `（${payload.genres.length} 个曲风，${payload.subgenre_ids.length} 个子曲风）`
+          : '（全站）';
+        pushLog(`定时任务已启动${target}`, 'accent');
         markDirty('scheduler', 'chrome');
         toast('定时任务已启动', 'success');
       } catch (err) {
@@ -2735,7 +2934,7 @@
     });
     $('#sched-stop').addEventListener('click', async () => {
       try {
-        await rpc('stopScheduler');
+        await host('stopScheduler');
         S.scheduler.running = false;
         pushLog('定时任务已停止', '');
         markDirty('scheduler', 'chrome');
@@ -2830,6 +3029,13 @@
   }
 
   function setupSettings() {
+    $('#theme-grid')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-theme-choice]');
+      if (!btn) return;
+      applyTheme(btn.dataset.themeChoice);
+      const labels = { mecha: '已切换为机能工业终端', 'mecha-light': '已切换为机能白灰', classic: '已切换为经典深色' };
+      toast(labels[btn.dataset.themeChoice] || '主题已切换', 'success');
+    });
     $('#quality-grid').addEventListener('click', async (e) => {
       const btn = e.target.closest('.option');
       if (!btn) return;
@@ -3054,8 +3260,20 @@
       pulseView(view);
       if (view === 'search') setTimeout(() => $('#search-input').focus(), 30);
     }));
-    $('#collapse-btn').addEventListener('click', toggleRail);
-    $('#account-action').addEventListener('click', () => {
+    $('#collapse-btn')?.addEventListener('click', toggleRail);
+    $('#account-row').addEventListener('click', () => {
+      if (S.authReady) setView('settings');
+      else showLoginModal(false);
+    });
+    $('#account-row').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (S.authReady) setView('settings');
+        else showLoginModal(false);
+      }
+    });
+    $('#account-action')?.addEventListener('click', (e) => {
+      e.stopPropagation();
       if (S.authReady) setView('settings');
       else showLoginModal(false);
     });
@@ -3114,6 +3332,7 @@
         if (S.update.applying) return;
         if (!modalLayer().hidden) { closeModal(); return; }
         if (!$('#genre-popover').hidden) { toggleGenrePopover(false); return; }
+      if (!$('#sched-genre-popover').hidden) { toggleSchedulerGenrePopover(false); return; }
         if (S.view === 'downloads' && S.downloads.selected.size) { clearDownloadSelection(); return; }
         if (!$('#selection-dock').hidden) { setAllSelected(currentListId(), false); }
         return;
@@ -3180,7 +3399,9 @@
     setupDownloads();
     setupScheduler();
     setupSettings();
+    setupWindowbar();
 
+    applyTheme(S.theme, false);
     setView(PAGE_META[S.view] ? S.view : 'discover');
     renderChrome();
     renderDiscover();
@@ -3229,7 +3450,9 @@
       for (let i = 0; i < 40 && S.discover.items.length === 0; i++) await wait(150);
       await wait(450);
       check('discover-loaded', S.discover.items.length > 0, String(S.discover.items.length));
+      check('windowbar', !!$('#windowbar') && !!$('#win-close') && !$('#collapse-btn'), 'custom');
       check('genres-loaded', S.genres.length > 0, String(S.genres.length));
+      check('scheduler-picker', !!$('#sched-genre-trigger') && !!$('#sched-genre-popover'), 'present');
       check('artists-string', !String(S.discover.items[0] && S.discover.items[0].artists).includes('[object'),
         S.discover.items[0] && S.discover.items[0].artists);
 
@@ -3301,6 +3524,21 @@
       $('.nav-item[data-view="settings"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await wait(200);
       check('quality-active', $$('#quality-grid .option.active').length === 1);
+      check('theme-picker', $$('#theme-grid .theme-choice').length === 3, String($$('#theme-grid .theme-choice').length));
+      const lightTheme = $('[data-theme-choice="mecha-light"]');
+      if (lightTheme) {
+        lightTheme.click();
+        await wait(80);
+        check('theme-light', document.documentElement.dataset.mechaVariant === 'light', document.documentElement.dataset.mechaVariant);
+      }
+      const classicTheme = $('[data-theme-choice="classic"]');
+      if (classicTheme) {
+        classicTheme.click();
+        await wait(80);
+        check('theme-classic', document.documentElement.dataset.theme === 'classic', document.documentElement.dataset.theme);
+        $('[data-theme-choice="mecha"]')?.click();
+        await wait(80);
+      }
       if (new URLSearchParams(location.search).get('update') === '1') {
         await wait(250);
         const pill = $('#update-slot .update-pill');
@@ -3525,6 +3763,26 @@
           return reply(msg.id, t, {
             results: items, page, per_page: per,
             count: allTracks.length, has_more: start + per < allTracks.length,
+          });
+        }
+        case 'getLatestDiscover': {
+          const p = msg.params || {};
+          const kindWant = p.kind === 'releases' ? 'releases' : 'tracks';
+          const page = Number(p.page) || 1;
+          const per = Number(p.per_page) || 50;
+          const pool = kindWant === 'releases' ? allReleases : allTracks;
+          const genres = Array.isArray(p.genres) ? p.genres : [];
+          const filtered = genres.length ? pool.filter((it) => !it.genre || genres.includes(it.genre)) : pool;
+          const start = (page - 1) * per;
+          const cover = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Crect width='80' height='80' fill='%23151a16'/%3E%3Ccircle cx='40' cy='40' r='18' fill='%23c7b25c' opacity='.45'/%3E%3C/svg%3E";
+          const results = filtered.slice(start, start + per).map((it) => ({
+            url: it.url, id: it.id, name: it.name, title: it.title,
+            mix_name: it.mix_name, artists: it.artists, genre: it.genre,
+            type: kindWant === 'releases' ? 'release' : 'track', cover,
+          }));
+          return reply(msg.id, t, {
+            results, page, per_page: per,
+            count: filtered.length, has_more: start + per < filtered.length,
           });
         }
         case 'getSettings': return reply(msg.id, t, {

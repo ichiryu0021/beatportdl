@@ -15,8 +15,20 @@ func (e *Chromium) Resize() {
 	}
 	var bounds w32.Rect
 	_, _, _ = w32.User32GetClientRect.Call(e.hwnd, uintptr(unsafe.Pointer(&bounds)))
+	if e.inset > 0 && bounds.Right-bounds.Left > e.inset*2 && bounds.Bottom-bounds.Top > e.inset*2 {
+		bounds.Left += e.inset
+		bounds.Top += e.inset
+		bounds.Right -= e.inset
+		bounds.Bottom -= e.inset
+	}
 	_, _, _ = e.controller.vtbl.PutBounds.Call(
 		uintptr(unsafe.Pointer(e.controller)),
 		uintptr(unsafe.Pointer(&bounds)),
 	)
+}
+
+// SetInset leaves a small host-painted resize border around the WebView.
+func (e *Chromium) SetInset(px int32) {
+	e.inset = px
+	e.Resize()
 }

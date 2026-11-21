@@ -68,6 +68,7 @@ type bridge struct {
 	restarting atomic.Bool
 	updates    *updateManager
 	catalog    *catalogManager
+	scheduler  *schedulerManager
 }
 
 func newBridge(rpc *rpcClient, b *backend, paths Paths, log *log.Logger, debug bool, webviewVersion, performanceMode string) *bridge {
@@ -83,6 +84,7 @@ func newBridge(rpc *rpcClient, b *backend, paths Paths, log *log.Logger, debug b
 	}
 	br.updates = newUpdateManager(paths, log)
 	br.catalog = newCatalogManager(paths, log)
+	br.scheduler = newSchedulerManager(br.rpc, br.catalog, log, br.send)
 	br.eventBatch = newEventBatcher(br)
 	return br
 }
@@ -289,6 +291,60 @@ func (b *bridge) handleUI(msg inboundMessage) {
 
 func (b *bridge) handleHost(msg inboundMessage) {
 	switch msg.Action {
+	case "windowDrag":
+		if b.window == nil {
+			b.reply(msg.ID, "host", nil, fmt.Errorf("窗口未就绪"))
+			return
+		}
+		b.window.StartDrag()
+		b.reply(msg.ID, "host", map[string]any{"ok": true}, nil)
+	case "windowResizeStart":
+		var p struct {
+			Direction string `json:"direction"`
+		}
+		if err := json.Unmarshal(msg.Params, &p); err != nil {
+			b.reply(msg.ID, "host", nil, fmt.Errorf("缩放方向错误：%w", err))
+			return
+		}
+		hit := map[string]uintptr{
+			"left": winui.HTLeft, "right": winui.HTRight,
+			"top": winui.HTTop, "bottom": winui.HTBottom,
+			"top-left": winui.HTTopLeft, "top-right": winui.HTTopRight,
+			"bottom-left": winui.HTBottomLeft, "bottom-right": winui.HTBottomRight,
+		}[p.Direction]
+		if hit == 0 || b.window == nil {
+			b.reply(msg.ID, "host", nil, fmt.Errorf("缩放方向无效"))
+			return
+		}
+		b.window.StartResize(hit)
+		b.reply(msg.ID, "host", map[string]any{"ok": true}, nil)
+	case "windowMinimize":
+		if b.window != nil {
+			b.window.Minimize()
+		}
+		b.reply(msg.ID, "host", map[string]any{"ok": true}, nil)
+	case "windowToggleMaximize":
+		if b.window != nil {
+			b.window.ToggleMaximize()
+		}
+		b.reply(msg.ID, "host", map[string]any{"ok": true}, nil)
+	case "windowClose":
+		if b.window != nil {
+			b.window.Close()
+		}
+		b.reply(msg.ID, "host", map[string]any{"ok": true}, nil)
+	case "setWindowAppearance":
+		var p struct {
+			Light bool `json:"light"`
+		}
+		if err := json.Unmarshal(msg.Params, &p); err != nil {
+			b.reply(msg.ID, "host", nil, fmt.Errorf("窗口外观参数错误：%w", err))
+			return
+		}
+		if b.window != nil {
+			b.window.SetAppearance(p.Light)
+		}
+		b.reply(msg.ID, "host", map[string]any{"ok": true}, nil)
 	case "pickFolder":
 		if b.window == nil {
 			b.reply(msg.ID, "host", nil, fmt.Errorf("窗口未就绪"))
@@ -426,6 +482,40 @@ func (b *bridge) handleHost(msg inboundMessage) {
 			}
 			b.reply(msg.ID, "host", result, nil)
 		}()
+	case "getLatestDiscover":
+		var p discoverLatestParams
+		if err := json.Unmarshal(msg.Params, &p); err != nil {
+			b.reply(msg.ID, "host", nil, fmt.Errorf("发现参数错误：%w", err))
+			return
+		}
+		go func() {
+			result, err := b.catalog.LatestDiscover(p)
+			if err != nil {
+				b.reply(msg.ID, "host", nil, err)
+				return
+			}
+			b.reply(msg.ID, "host", result, nil)
+		}()
+	case "startScheduler":
+		var p schedulerStartParams
+		if err := json.Unmarshal(msg.Params, &p); err != nil {
+			b.reply(msg.ID, "host", nil, fmt.Errorf("定时任务参数错误：%w", err))
+			return
+		}
+		go func() {
+			if err := b.scheduler.Start(p); err != nil {
+				b.reply(msg.ID, "host", nil, err)
+				return
+			}
+			b.reply(msg.ID, "host", map[string]any{"ok": true}, nil)
+		}()
+	case "stopScheduler":
+		go func() {
+			b.scheduler.Stop()
+			b.reply(msg.ID, "host", map[string]any{"ok": true}, nil)
+		}()
+	case "schedulerStatus":
+		b.reply(msg.ID, "host", b.scheduler.Status(), nil)
 	default:
 		b.reply(msg.ID, "host", nil, fmt.Errorf("未知操作: %s", msg.Action))
 	}

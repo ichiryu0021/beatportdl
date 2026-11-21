@@ -204,7 +204,9 @@ a { color: var(--accent-2); text-decoration: none; }
   border: 1px solid var(--line);
   border-radius: 13px;
   background: rgba(255, 255, 255, 0.022);
+  cursor: pointer;
 }
+.account:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
 .avatar {
   width: 30px; height: 30px; flex: 0 0 30px;
   display: grid; place-items: center;
@@ -620,6 +622,26 @@ kbd {
 .row:hover .cell-actions, .row.selected .cell-actions { opacity: 1; }
 
 .track-cell { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.cover-wrap {
+  position: relative;
+  width: 44px; height: 44px; flex: 0 0 44px;
+  color: rgba(255, 255, 255, 0.62);
+  background:
+    linear-gradient(currentColor, currentColor) left top / 6px 1px no-repeat,
+    linear-gradient(currentColor, currentColor) left top / 1px 6px no-repeat,
+    linear-gradient(currentColor, currentColor) right top / 6px 1px no-repeat,
+    linear-gradient(currentColor, currentColor) right top / 1px 6px no-repeat,
+    linear-gradient(currentColor, currentColor) left bottom / 6px 1px no-repeat,
+    linear-gradient(currentColor, currentColor) left bottom / 1px 6px no-repeat,
+    linear-gradient(currentColor, currentColor) right bottom / 6px 1px no-repeat,
+    linear-gradient(currentColor, currentColor) right bottom / 1px 6px no-repeat;
+}
+.cover-wrap .cover {
+  position: absolute;
+  inset: 2px;
+  width: auto; height: auto; flex: none;
+}
+.cover-corners { display: none; }
 .cover {
   width: 40px; height: 40px; flex: 0 0 40px;
   border-radius: 9px;
@@ -630,11 +652,26 @@ kbd {
   display: grid; place-items: center;
   color: rgba(255, 255, 255, 0.55);
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
-.cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(255,255,255,.12), transparent 45%); }
+.cover::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(180deg, rgba(255,255,255,.12), transparent 45%); pointer-events: none; }
 .cover .ic { width: 17px; height: 17px; position: relative; z-index: 1; }
+.cover img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  position: relative; z-index: 1;
+  border-radius: inherit;
+}
+.cover::after { pointer-events: none; }
 .cover .cover-letter { position: relative; z-index: 1; font-size: 15px; font-weight: 700; color: rgba(255, 255, 255, 0.85); }
+.page-size-label {
+  color: var(--text-3);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+}
+.page-size-seg .seg { min-width: 38px; }
 .track-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .track-text strong { font-size: 13px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .track-text em { font-style: normal; color: var(--text-3); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1044,3 +1081,106 @@ kbd {
   .list-head, .row { grid-template-columns: 40px 36px minmax(0, 1fr) 140px 88px; }
   .list-head .cell-genre, .row .cell-genre { display: none; }
 }
+
+/* --------------------------------------------------------- theme selector */
+
+.app-shell { height: 100vh; display: flex; flex-direction: column; min-height: 0; }
+.app-shell .app { height: auto; flex: 1 1 auto; min-height: 0; }
+
+.windowbar {
+  height: 36px; flex: 0 0 36px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 0 0 12px;
+  border-bottom: 1px solid var(--line);
+  background: #080d13;
+  user-select: none; -webkit-user-select: none;
+}
+.win-brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.win-brand strong { font: 600 11px var(--font); letter-spacing: 0.12em; color: var(--text); }
+.win-brand em {
+  font-style: normal; font-family: var(--mono); font-size: 8px;
+  letter-spacing: 0.13em; color: var(--text-3);
+}
+.win-signal { width: 6px; height: 6px; flex: 0 0 6px; background: var(--accent); }
+.win-spacer { flex: 1 1 auto; }
+.win-actions { display: flex; align-self: stretch; }
+.win-btn {
+  width: 44px; height: 100%; padding: 0;
+  display: grid; place-items: center;
+  border: 0; border-left: 1px solid var(--line);
+  border-radius: 0; background: transparent;
+  color: var(--text-2);
+}
+.win-btn:hover { background: rgba(255, 255, 255, 0.06); color: var(--text); }
+.win-btn.win-close:hover { background: #c42b1c; color: #fff; }
+.win-btn .ic { width: 14px; height: 14px; }
+.win-min-line { width: 10px; height: 1px; background: currentColor; }
+.win-max-box { width: 9px; height: 9px; border: 1px solid currentColor; }
+
+.resize-handles { position: fixed; inset: 0; z-index: 100000; pointer-events: none; }
+.resize-handle { position: absolute; pointer-events: auto; background: transparent; }
+.resize-n { left: 8px; right: 8px; top: 0; height: 5px; cursor: n-resize; }
+.resize-s { left: 8px; right: 8px; bottom: 0; height: 5px; cursor: s-resize; }
+.resize-w { top: 8px; bottom: 8px; left: 0; width: 5px; cursor: w-resize; }
+.resize-e { top: 8px; bottom: 8px; right: 0; width: 5px; cursor: e-resize; }
+.resize-nw { left: 0; top: 0; width: 10px; height: 10px; cursor: nw-resize; }
+.resize-ne { right: 0; top: 0; width: 10px; height: 10px; cursor: ne-resize; }
+.resize-sw { left: 0; bottom: 0; width: 10px; height: 10px; cursor: sw-resize; }
+.resize-se { right: 0; bottom: 0; width: 10px; height: 10px; cursor: se-resize; }
+
+.theme-current {
+  display: inline-flex; align-items: center;
+  height: 24px; padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--text-3);
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
+}
+.theme-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.theme-choice {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 9px; border: 1px solid var(--line); border-radius: 11px;
+  background: rgba(255, 255, 255, 0.015); color: var(--text-2); text-align: left;
+}
+.theme-choice:hover { border-color: var(--line-strong); background: rgba(255, 255, 255, 0.04); }
+.theme-choice.active { border-color: var(--accent-line); background: var(--accent-soft); }
+.theme-shot {
+  position: relative; display: block; height: 72px; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 7px; background: #080c10;
+}
+.theme-shot i { position: absolute; left: 0; top: 0; bottom: 0; width: 27%; border-right: 1px solid var(--line-strong); background: #0c131b; }
+.theme-shot b { position: absolute; left: 34%; right: 8%; height: 7px; border: 1px solid var(--line); background: #111a23; }
+.theme-shot b:nth-of-type(1) { top: 12px; }
+.theme-shot b:nth-of-type(2) { top: 27px; right: 26%; }
+.theme-shot b:nth-of-type(3) { top: 42px; right: 42%; }
+.theme-shot em { position: absolute; left: 34%; top: 57px; width: 16%; height: 5px; background: var(--accent); }
+.theme-shot-classic i { background: #0c131b; }
+.theme-shot-classic b { background: #111a23; }
+.theme-shot-classic em { background: #01ff95; }
+.theme-shot-light { background: #e9e7df; border-color: rgba(43, 49, 45, 0.2); }
+.theme-shot-light i { background: #dfdcd3; border-right-color: rgba(43, 49, 45, 0.18); }
+.theme-shot-light b { background: #f8f6ef; border-color: rgba(43, 49, 45, 0.16); }
+.theme-shot-light em { background: #5b6158; }
+.theme-choice-text { display: flex; flex-direction: column; gap: 3px; }
+.theme-choice-text strong { font-size: 12px; color: var(--text); letter-spacing: 0.03em; }
+.theme-choice-text em { font-style: normal; color: var(--text-3); font-family: var(--mono); font-size: 9px; letter-spacing: 0.06em; }
+
+/* Settings is a single normalized module rail: every card has the same width,
+   content-sized height, and a fixed 14px rhythm — no row holes, no clipped
+   overflow, no half-empty paired cards. */
+.settings-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+.settings-card {
+  width: 100%;
+  height: auto;
+  margin: 0;
+}
+.settings-card .card-head { min-height: 42px; }
+.settings-card .option { min-height: 64px; }
+.settings-card .theme-choice { min-height: 154px; }

@@ -41,6 +41,13 @@ var (
 	procSetWindowPos              = user32.NewProc("SetWindowPos")
 	procGetWindowRect             = user32.NewProc("GetWindowRect")
 	procGetClientRect             = user32.NewProc("GetClientRect")
+	procGetWindowDC               = user32.NewProc("GetWindowDC")
+	procReleaseDC                 = user32.NewProc("ReleaseDC")
+	procFillRect                  = user32.NewProc("FillRect")
+	procReleaseCapture            = user32.NewProc("ReleaseCapture")
+	procSendMessageW              = user32.NewProc("SendMessageW")
+	procMonitorFromWindow         = user32.NewProc("MonitorFromWindow")
+	procGetMonitorInfoW           = user32.NewProc("GetMonitorInfoW")
 	procSetFocus                  = user32.NewProc("SetFocus")
 	procLoadImageW                = user32.NewProc("LoadImageW")
 	procLoadIconW                 = user32.NewProc("LoadIconW")
@@ -57,8 +64,11 @@ var (
 	procIsZoomed                  = user32.NewProc("IsZoomed")
 	procSetWindowLongPtrW         = user32.NewProc("SetWindowLongPtrW")
 	procGetWindowLongPtrW         = user32.NewProc("GetWindowLongPtrW")
+	procSetClassLongPtrW          = user32.NewProc("SetClassLongPtrW")
+	procRedrawWindow              = user32.NewProc("RedrawWindow")
 	procGetSystemMetrics          = user32.NewProc("GetSystemMetrics")
 	procDwmSetWindowAttribute     = dwmapi.NewProc("DwmSetWindowAttribute")
+	procDeleteObject              = gdi32.NewProc("DeleteObject")
 	procShellExecuteW             = shell32.NewProc("ShellExecuteW")
 	procSetProcessDpiAwareness    = shcore.NewProc("SetProcessDpiAwareness")
 	procCoInitializeEx            = ole32.NewProc("CoInitializeEx")
@@ -77,6 +87,20 @@ const (
 	WSOverlappedWindow = 0x00CF0000
 	WSVisible          = 0x10000000
 
+	WSPopup       = 0x80000000
+	WSThickFrame  = 0x00040000
+	WSMinimizeBox = 0x00020000
+	WSMaximizeBox = 0x00010000
+	WSSysMenu     = 0x00080000
+	WSExAppWindow = 0x00040000
+
+	// AppWindowStyle is a frameless resizable top-level window. Windows keeps
+	// the resize frame and taskbar integration, but draws no native caption.
+	AppWindowStyle = WSPopup | WSThickFrame | WSMinimizeBox | WSMaximizeBox | WSSysMenu
+
+	HTCAPTION       = 2
+	WMNCLButtonDown = 0x00A1
+
 	SWShowNormal = 1
 	SWMaximize   = 3
 	SWShow       = 5
@@ -92,10 +116,24 @@ const (
 	WMClose         = 0x0010
 	WMQuit          = 0x0012
 	WMEraseBkgnd    = 0x0014
+	WMNCCalcSize    = 0x0083
+	WMNCHitTest     = 0x0084
+	WMNCPaint       = 0x0085
 	WMGetMinMaxInfo = 0x0024
 	WMDpiChanged    = 0x02E0
 	WMApp           = 0x8000
 
+	HTClient      = 1
+	HTLeft        = 10
+	HTRight       = 11
+	HTTop         = 12
+	HTTopLeft     = 13
+	HTTopRight    = 14
+	HTBottom      = 15
+	HTBottomLeft  = 16
+	HTBottomRight = 17
+
+	SWPNoSize       = 0x0001
 	SWPNoZOrder     = 0x0004
 	SWPNoActivate   = 0x0010
 	SWPNoMove       = 0x0002
@@ -103,13 +141,20 @@ const (
 
 	SPIGetWorkArea = 0x0030
 
+	MonitorDefaultToNearest = 2
+
 	LRLoadFromFile = 0x0010
 	LRDefaultSize  = 0x0040
 	ImageIcon      = 1
 	IDIApplication = 32512
 	IDCArrow       = 32512
 
-	GWLStyle = -16
+	GWLStyle       = -16
+	GCLPBackground = ^uintptr(9)
+
+	RDWInvalidate  = 0x0001
+	RDWAllChildren = 0x0080
+	RDWFrame       = 0x0400
 
 	MBOK              = 0x00000000
 	MBIconError       = 0x00000010
@@ -124,6 +169,7 @@ const (
 	DWMWABorderColor          = 34
 	DWMWATextColor            = 36
 	DWMWCPRound               = 2
+	DWMWCPDoNotRound          = 1
 
 	CLSCTXInprocServer      = 0x1
 	COINITApartmentThreaded = 0x2
@@ -149,6 +195,13 @@ type minMaxInfo struct {
 	PtMaxPosition  point
 	PtMinTrackSize point
 	PtMaxTrackSize point
+}
+
+type monitorInfo struct {
+	CbSize    uint32
+	RcMonitor rect
+	RcWork    rect
+	DwFlags   uint32
 }
 
 type wndClassExW struct {

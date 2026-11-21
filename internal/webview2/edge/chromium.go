@@ -17,6 +17,7 @@ import (
 
 type Chromium struct {
 	hwnd                  uintptr
+	inset                 int32
 	focusOnInit           bool
 	controller            *ICoreWebView2Controller
 	webview               *ICoreWebView2

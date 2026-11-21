@@ -58,6 +58,21 @@ type subgenreLatestParams struct {
 	DateTo   string  `json:"date_to"`
 }
 
+type discoverLatestParams struct {
+	Kind        string   `json:"kind"`
+	Page        int      `json:"page"`
+	PerPage     int      `json:"per_page"`
+	Genres      []string `json:"genres"`
+	SubgenreIDs []int64  `json:"subgenre_ids"`
+	DateFrom    string   `json:"date_from"`
+	DateTo      string   `json:"date_to"`
+}
+
+type latestFilter struct {
+	Key   string
+	Value string
+}
+
 type catalogManager struct {
 	mu       sync.Mutex
 	paths    Paths
@@ -187,6 +202,155 @@ func (m *catalogManager) Catalog(force bool) (GenreCatalog, error) {
 	m.cached = catalog
 	m.cachedAt = time.Now()
 	return catalog, nil
+}
+
+func (m *catalogManager) LatestDiscover(p discoverLatestParams) (map[string]any, error) {
+	if p.Page <= 0 {
+		p.Page = 1
+	}
+	if p.PerPage <= 0 {
+		p.PerPage = 50
+	}
+	if p.PerPage > 200 {
+		p.PerPage = 200
+	}
+	if p.Kind != "releases" {
+		p.Kind = "tracks"
+	}
+	token, err := m.accessToken()
+	if err != nil {
+		return nil, err
+	}
+
+	filters := make([]latestFilter, 0, len(p.SubgenreIDs)+len(p.Genres))
+	for _, id := range p.SubgenreIDs {
+		if id > 0 {
+			filters = append(filters, latestFilter{Key: "sub_genre_id", Value: strconv.FormatInt(id, 10)})
+		}
+	}
+	if len(filters) == 0 && len(p.Genres) > 0 {
+		catalog, err := m.Catalog(false)
+		if err != nil {
+			return nil, err
+		}
+		ids := make(map[string]int64, len(catalog.Genres))
+		for _, genre := range catalog.Genres {
+			ids[genre.Name] = genre.ID
+		}
+		for _, name := range p.Genres {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			if id := ids[name]; id > 0 {
+				filters = append(filters, latestFilter{Key: "genre_id", Value: strconv.FormatInt(id, 10)})
+			} else {
+				filters = append(filters, latestFilter{Key: "genre_name", Value: name})
+			}
+		}
+	}
+	if len(filters) == 0 {
+		filters = append(filters, latestFilter{})
+	}
+
+	seen := make(map[string]bool)
+	out := make([]map[string]any, 0, p.PerPage)
+	count := 0
+	hasMore := false
+	for _, filter := range filters {
+		page, err := m.fetchDiscoverPage(token, p, filter)
+		if err != nil {
+			return nil, err
+		}
+		count += page.Count
+		hasMore = hasMore || page.HasMore
+		for _, item := range page.Results {
+			key, _ := item["url"].(string)
+			if key == "" || seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, item)
+		}
+	}
+	return map[string]any{
+		"results":  out,
+		"page":     p.Page,
+		"per_page": p.PerPage,
+		"count":    count,
+		"has_more": hasMore,
+	}, nil
+}
+
+func (m *catalogManager) fetchDiscoverPage(token string, p discoverLatestParams, filter latestFilter) (struct {
+	Results []map[string]any
+	Count   int
+	HasMore bool
+}, error) {
+	out := struct {
+		Results []map[string]any
+		Count   int
+		HasMore bool
+	}{Results: []map[string]any{}}
+	base := "https://api.beatport.com/v4/catalog/"
+	if p.Kind == "releases" {
+		base += "releases/"
+	} else {
+		base += "tracks/"
+	}
+	q := url.Values{}
+	if p.Kind == "releases" {
+		q.Set("order_by", "-new_release_date")
+	} else {
+		q.Set("order_by", "-publish_date")
+	}
+	q.Set("page", strconv.Itoa(p.Page))
+	q.Set("per_page", strconv.Itoa(p.PerPage))
+	q.Set("is_available_for_streaming", "true")
+	if filter.Key != "" {
+		q.Set(filter.Key, filter.Value)
+	}
+	if p.DateFrom != "" || p.DateTo != "" {
+		q.Set("new_release_date", p.DateFrom+":"+p.DateTo)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"?"+q.Encode(), nil)
+	if err != nil {
+		return out, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", updateUserAgent)
+	req.Header.Set("Accept", "application/json")
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return out, fmt.Errorf("读取 Beatport 最新曲目失败：%w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+	if resp.StatusCode == http.StatusUnauthorized {
+		return out, errors.New("Beatport 登录已过期，请在设置页重新登录")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return out, fmt.Errorf("Beatport 返回 HTTP %d", resp.StatusCode)
+	}
+	var payload struct {
+		Count   int              `json:"count"`
+		Next    *string          `json:"next"`
+		Results []map[string]any `json:"results"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return out, err
+	}
+	out.Count = payload.Count
+	out.HasMore = payload.Next != nil && *payload.Next != ""
+	for _, raw := range payload.Results {
+		item := normalizeCatalogItem(raw, p.Kind)
+		if item != nil {
+			out.Results = append(out.Results, item)
+		}
+	}
+	return out, nil
 }
 
 func (m *catalogManager) Latest(p subgenreLatestParams) (map[string]any, error) {
@@ -339,7 +503,33 @@ func normalizeCatalogItem(raw map[string]any, kind string) map[string]any {
 	if sub, ok := raw["sub_genre"].(map[string]any); ok {
 		item["subgenre"] = map[string]any{"id": jsonInt64(sub["id"]), "name": sub["name"]}
 	}
+	if cover := catalogCover(raw); cover != "" {
+		item["cover"] = cover
+	}
 	return item
+}
+
+func catalogCover(raw map[string]any) string {
+	if release, ok := raw["release"].(map[string]any); ok {
+		if cover := catalogImageURL(release["image"]); cover != "" {
+			return cover
+		}
+	}
+	return catalogImageURL(raw["image"])
+}
+
+func catalogImageURL(value any) string {
+	image, ok := value.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if dynamic, ok := image["dynamic_uri"].(string); ok && dynamic != "" {
+		return strings.ReplaceAll(dynamic, "{w}x{h}", "300x300")
+	}
+	if uri, ok := image["uri"].(string); ok {
+		return uri
+	}
+	return ""
 }
 
 func jsonInt64(value any) int64 {
