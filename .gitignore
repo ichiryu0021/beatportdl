@@ -14,4 +14,7 @@ downloads/
 /test-deploy/
 /gui/build/
 /dl-test/
+/dist/
+/.pkg-tmp/
+/.tmp-*/
 

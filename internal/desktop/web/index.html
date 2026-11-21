@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Beatport 下载器</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2.1 4.9-4.9 2.1 2.1-4.9 4.9-2.1Z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 1.9"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 20h16"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 8h9"/><path d="M17 8h3"/><circle cx="15" cy="8" r="2"/><path d="M4 16h3"/><path d="M11 16h9"/><circle cx="9" cy="16" r="2"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.6 6.2"/><path d="M20 4v6h-6"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4 10.5 13.5"/><path d="M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></symbol>
+  <symbol id="i-disc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.4"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16.5h.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5"/><path d="M12 7.5h.01"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V5h6v2"/><path d="m6 7 1 13h10l1-13"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.8-6 8-6s8 2 8 6"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M15 4h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3"/><path d="M10 12H3"/><path d="m7 9-3 3 3 3"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3.5 13.7 8 18 9.7 13.7 11.4 12 15.9 10.3 11.4 6 9.7 10.3 8Z"/><path d="M18.5 14.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8Z"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M3 10h18"/></symbol>
+  <symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="m3 3 18 18"/><path d="M8.6 8.7A11 11 0 0 0 5 11"/><path d="M2.5 8.4a15 15 0 0 1 4.2-2.7"/><path d="M15.5 11.2a6 6 0 0 0-3.4-1.1"/><path d="M8.7 15.5a5 5 0 0 0 5.9-.8"/><path d="M12 18.5h.01"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10-6.5Z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="7" y="5" width="3.5" height="14" rx="1.2"/><rect x="13.5" y="5" width="3.5" height="14" rx="1.2"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3.5 6h.01"/><path d="M3.5 12h.01"/><path d="M3.5 18h.01"/></symbol>
+  <symbol id="i-loader" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/></symbol>
+  <symbol id="i-logo" viewBox="0 0 32 32"><rect x="1" y="1" width="30" height="30" rx="8"/><path d="M16 7.5v11"/><path d="m10.5 14 5.5 5.5L21.5 14"/><path d="M9.5 24.5h13"/></symbol>
+</svg>
+
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <span class="brand-mark"><svg class="ic"><use href="#i-logo"/></svg></span>
+      <span class="brand-text"><strong>Beatport</strong><em>下载器</em></span>
+    </div>
+
+    <nav class="nav" aria-label="主导航">
+      <button class="nav-item active" data-view="discover" type="button">
+        <svg class="ic"><use href="#i-compass"/></svg><span>发现最新</span>
+      </button>
+      <button class="nav-item" data-view="search" type="button">
+        <svg class="ic"><use href="#i-search"/></svg><span>搜索</span>
+      </button>
+      <button class="nav-item" data-view="scheduler" type="button">
+        <svg class="ic"><use href="#i-clock"/></svg><span>定时任务</span><i class="nav-dot" id="sched-dot" hidden></i>
+      </button>
+      <button class="nav-item" data-view="downloads" type="button">
+        <svg class="ic"><use href="#i-download"/></svg><span>下载队列</span><i class="nav-badge" id="downloads-badge" hidden>0</i>
+      </button>
+      <button class="nav-item" data-view="settings" type="button">
+        <svg class="ic"><use href="#i-settings"/></svg><span>设置</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <button class="backend-pill" id="backend-pill" type="button" title="点击检查后端连接">
+        <span class="pulse" id="backend-dot"></span>
+        <span class="backend-label" id="backend-text">正在启动后端…</span>
+      </button>
+      <div class="account" id="account-row">
+        <span class="avatar" id="account-avatar">B</span>
+        <span class="account-meta">
+          <strong id="account-name">未登录</strong>
+          <em id="account-sub">Beatport 账号</em>
+        </span>
+        <button class="icon-btn" id="account-action" type="button" title="登录">
+          <svg class="ic"><use href="#i-user"/></svg>
+        </button>
+      </div>
+      <button class="collapse-btn" id="collapse-btn" type="button" title="收起侧栏 (Ctrl+B)">
+        <svg class="ic"><use href="#i-panel"/></svg><span>收起侧栏</span>
+      </button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="page-head">
+        <h1 id="page-title">发现最新</h1>
+        <p id="page-subtitle">从 Beatport 曲库按曲风与日期发现新歌</p>
+      </div>
+      <div class="topbar-right">
+        <div class="update-slot" id="update-slot"></div>
+        <div class="topbar-actions" id="topbar-actions"></div>
+      </div>
+    </header>
+
+    <div class="banner" id="conn-banner" hidden>
+      <svg class="ic"><use href="#i-wifi-off"/></svg>
+      <span id="conn-text">后端连接已断开</span>
+      <button class="btn small" id="conn-retry" type="button">重新连接</button>
+      <button class="btn small ghost" id="conn-logs" type="button">查看日志</button>
+    </div>
+
+    <div class="content" id="content">
+
+      <!-- 发现最新 -->
+      <section class="view" data-view="discover">
+        <div class="view-scroll">
+          <div class="card filter-card">
+            <div class="filter-grid">
+              <div class="field">
+                <span class="field-label">曲风</span>
+                <button class="control trigger" id="genre-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="genre-label">全部曲风</span>
+                  <svg class="ic chev"><use href="#i-chevron"/></svg>
+                </button>
+                <div class="popover genre-popover" id="genre-popover" hidden>
+                  <div class="popover-search">
+                    <svg class="ic"><use href="#i-search"/></svg>
+                    <input id="genre-search" type="text" placeholder="搜索曲风…" autocomplete="off">
+                  </div>
+                  <div class="genre-list" id="genre-list" role="listbox" aria-multiselectable="true"></div>
+                  <div class="popover-foot">
+                    <button class="btn tiny ghost" id="genre-clear" type="button">清空</button>
+                    <span class="muted tiny" id="genre-hint">可多选</span>
+                    <button class="btn tiny primary" id="genre-apply" type="button">完成</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="field">
+                <span class="field-label">类型</span>
+                <div class="segmented" id="kind-seg">
+                  <button class="seg active" data-kind="tracks" type="button">曲目</button>
+                  <button class="seg" data-kind="releases" type="button">专辑</button>
+                </div>
+              </div>
+
+              <div class="field field-wide">
+                <span class="field-label">日期</span>
+                <div class="chips" id="date-chips">
+                  <button class="chip active" data-preset="latest" type="button">最新</button>
+                  <button class="chip" data-preset="week" type="button">近一周</button>
+                  <button class="chip" data-preset="month" type="button">近一月</button>
+                  <button class="chip" data-preset="halfyear" type="button">近半年</button>
+                  <button class="chip" data-preset="custom" type="button">自定义…</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="filter-extra" id="date-extra" hidden>
+              <div class="date-range">
+                <svg class="ic"><use href="#i-calendar"/></svg>
+                <input type="date" id="date-from" aria-label="开始日期">
+                <span class="muted">至</span>
+                <input type="date" id="date-to" aria-label="结束日期">
+                <button class="btn tiny ghost" id="date-today" type="button">今日</button>
+              </div>
+            </div>
+
+            <div class="filter-foot">
+              <button class="btn primary" id="discover-load" type="button">
+                <svg class="ic"><use href="#i-refresh"/></svg><span>获取最新</span>
+              </button>
+              <span class="hint">提示：结果单击勾选，Shift 连选，Ctrl+A 全选</span>
+              <span class="spacer"></span>
+              <span class="count-pill" id="discover-count">0 首</span>
+              <button class="btn small ghost" id="discover-select-all" type="button">全选</button>
+              <button class="btn small ghost" id="discover-clear" type="button">清空选择</button>
+            </div>
+          </div>
+
+          <div class="card list-card">
+            <div class="list-head">
+              <span class="cell-cb"><label class="cb"><input type="checkbox" id="discover-check-all"><span></span></label></span>
+              <span class="cell-idx">#</span>
+              <span class="cell-title">曲目 / 专辑</span>
+              <span class="cell-artists">艺人</span>
+              <span class="cell-genre">曲风</span>
+              <span class="cell-actions"></span>
+            </div>
+            <div class="virtual-scroll" id="discover-scroll">
+              <div class="virtual-spacer" id="discover-spacer"></div>
+              <div class="virtual-rows" id="discover-rows"></div>
+            </div>
+            <div class="list-state" id="discover-state">
+              <svg class="ic"><use href="#i-sparkle"/></svg>
+              <span>选择曲风后点击「获取最新」开始发现</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 搜索 -->
+      <section class="view" data-view="search" hidden>
+        <div class="view-scroll">
+          <div class="card search-card">
+            <div class="search-hero">
+              <svg class="ic"><use href="#i-search"/></svg>
+              <input id="search-input" type="search" placeholder="搜索曲目、专辑、厂牌…  也可以直接粘贴 Beatport 链接" autocomplete="off" spellcheck="false">
+              <kbd>Enter</kbd>
+              <button class="btn primary" id="search-btn" type="button">搜索</button>
+            </div>
+            <div class="search-meta">
+              <span class="muted" id="search-hint">支持曲目、专辑与厂牌；搜索由 Beatport 曲库实时返回</span>
+              <span class="spacer"></span>
+              <span class="count-pill" id="search-count">0 条</span>
+              <button class="btn small ghost" id="search-select-all" type="button">全选</button>
+              <button class="btn small ghost" id="search-clear" type="button">清空选择</button>
+            </div>
+          </div>
+
+          <div class="card list-card">
+            <div class="list-head">
+              <span class="cell-cb"><label class="cb"><input type="checkbox" id="search-check-all"><span></span></label></span>
+              <span class="cell-idx">#</span>
+              <span class="cell-title">结果</span>
+              <span class="cell-artists">艺人</span>
+              <span class="cell-genre">类型</span>
+              <span class="cell-actions"></span>
+            </div>
+            <div class="virtual-scroll" id="search-scroll">
+              <div class="virtual-spacer" id="search-spacer"></div>
+              <div class="virtual-rows" id="search-rows"></div>
+            </div>
+            <div class="list-state" id="search-state">
+              <svg class="ic"><use href="#i-search"/></svg>
+              <span>输入关键词开始搜索</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 定时任务 -->
+      <section class="view" data-view="scheduler" hidden>
+        <div class="view-scroll scheduler-grid">
+          <div class="card scheduler-config">
+            <div class="card-head">
+              <div>
+                <h2>自动追新</h2>
+                <p class="muted">按间隔扫描最新发布，自动加入下载队列。</p>
+              </div>
+              <span class="status-chip" id="sched-status"><span class="pulse"></span><span>已停止</span></span>
+            </div>
+
+            <div class="form-block">
+              <span class="field-label">扫描间隔</span>
+              <div class="option-grid" id="sched-intervals">
+                <button class="option" data-seconds="86400" type="button"><strong>一天</strong><em>每天扫描一次</em></button>
+                <button class="option" data-seconds="604800" type="button"><strong>一周</strong><em>每周扫描一次</em></button>
+                <button class="option" data-seconds="2592000" type="button"><strong>一个月</strong><em>30 天一次</em></button>
+                <button class="option" data-seconds="7776000" type="button"><strong>三个月</strong><em>90 天一次</em></button>
+              </div>
+            </div>
+
+            <div class="form-block">
+              <span class="field-label">限定曲风</span>
+              <div class="select-wrap">
+                <select id="sched-genre" class="control">
+                  <option value="">全部曲风</option>
+                </select>
+                <svg class="ic chev"><use href="#i-chevron"/></svg>
+              </div>
+              <p class="hint">留空表示扫描全站最新发布。</p>
+            </div>
+
+            <div class="sched-note">
+              <span class="sched-note-icon"><svg class="ic"><use href="#i-sparkle"/></svg></span>
+              <div>
+                <strong id="sched-note-title">等待启动</strong>
+                <em id="sched-note-text">启动后会按设定间隔扫描 Beatport 最新发布，并自动跳过已存在的文件。</em>
+              </div>
+            </div>
+
+            <div class="scheduler-actions">
+              <button class="btn primary" id="sched-start" type="button"><svg class="ic"><use href="#i-play"/></svg><span>开始定时任务</span></button>
+              <button class="btn ghost" id="sched-stop" type="button"><svg class="ic"><use href="#i-stop"/></svg><span>停止</span></button>
+            </div>
+          </div>
+
+          <div class="card scheduler-log-card">
+            <div class="card-head">
+              <div>
+                <h2>运行日志</h2>
+                <p class="muted">定时任务扫描、发现结果与错误会实时显示。</p>
+              </div>
+              <button class="btn tiny ghost" id="sched-log-clear" type="button">清空</button>
+            </div>
+            <div class="log-console" id="sched-log"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 下载队列 -->
+      <section class="view" data-view="downloads" hidden>
+        <div class="view-scroll">
+          <div class="stats-row" id="dl-stats">
+            <div class="stat-card"><span class="stat-label">进行中</span><strong id="stat-active">0</strong><em>首正在下载</em></div>
+            <div class="stat-card ok"><span class="stat-label">已完成</span><strong id="stat-done">0</strong><em>首写入本地</em></div>
+            <div class="stat-card warn"><span class="stat-label">已跳过</span><strong id="stat-skipped">0</strong><em>重复或已存在</em></div>
+            <div class="stat-card bad"><span class="stat-label">失败</span><strong id="stat-error">0</strong><em>查看原因后重试</em></div>
+          </div>
+
+          <div class="card list-card">
+            <div class="list-toolbar">
+              <div class="segmented" id="dl-filter">
+                <button class="seg active" data-filter="all" type="button">全部</button>
+                <button class="seg" data-filter="active" type="button">队列中</button>
+                <button class="seg" data-filter="done" type="button">已完成</button>
+                <button class="seg" data-filter="error" type="button">失败 / 停止</button>
+              </div>
+              <span class="spacer"></span>
+              <button class="btn small ghost" id="dl-pause-all" type="button"><svg class="ic"><use href="#i-pause"/></svg><span>暂停队列</span></button>
+              <button class="btn small danger-ghost" id="dl-stop-all" type="button"><svg class="ic"><use href="#i-stop"/></svg><span>停止全部</span></button>
+              <button class="btn small ghost" id="dl-open-dir" type="button"><svg class="ic"><use href="#i-folder"/></svg><span>打开目录</span></button>
+              <button class="btn small ghost" id="dl-clear-done" type="button"><svg class="ic"><use href="#i-trash"/></svg><span>清除已结束</span></button>
+            </div>
+            <div class="dl-bulk" id="dl-bulk" hidden>
+              <span class="dl-bulk-count">已选 <strong id="dl-bulk-count">0</strong> 首</span>
+              <button class="btn tiny ghost" id="dl-pause-selected" type="button">暂停</button>
+              <button class="btn tiny ghost" id="dl-resume-selected" type="button">继续</button>
+              <button class="btn tiny danger-ghost" id="dl-delete-selected" type="button">删除</button>
+              <span class="spacer"></span>
+              <button class="btn tiny ghost" id="dl-clear-selection" type="button">取消选择</button>
+            </div>
+            <div class="dl-head">
+              <span class="cell-cb"><label class="cb"><input type="checkbox" id="dl-check-all"><span></span></label></span>
+              <span></span>
+              <span>任务</span>
+              <span>进度</span>
+              <span>状态</span>
+            </div>
+            <div class="virtual-scroll download-scroll" id="download-scroll">
+              <div class="virtual-spacer" id="download-spacer"></div>
+              <div class="virtual-rows" id="download-rows"></div>
+            </div>
+            <div class="list-state" id="download-state">
+              <svg class="ic"><use href="#i-download"/></svg>
+              <span>还没有下载任务，去「发现最新」挑选几首吧</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 设置 -->
+      <section class="view" data-view="settings" hidden>
+        <div class="view-scroll settings-grid">
+          <div class="card settings-card">
+            <div class="card-head"><div><h2>音频格式</h2><p class="muted">切换后对后续下载立即生效。</p></div></div>
+            <div class="option-grid quality-grid" id="quality-grid">
+              <button class="option" data-quality="lossless" type="button"><strong>FLAC 无损</strong><em>44.1 kHz · 需 Professional 会员</em></button>
+              <button class="option" data-quality="high" type="button"><strong>AAC 高品质</strong><em>256 kbps</em></button>
+              <button class="option" data-quality="medium" type="button"><strong>AAC 标准</strong><em>128 kbps</em></button>
+              <button class="option" data-quality="medium-hls" type="button"><strong>AAC HLS</strong><em>128 kbps · 需要 ffmpeg</em></button>
+            </div>
+          </div>
+
+          <div class="card settings-card">
+            <div class="card-head"><div><h2>已存在文件</h2><p class="muted">下载前发现同名文件时的处理方式。</p></div></div>
+            <div class="select-wrap">
+              <select id="track-exists" class="control">
+                <option value="skip">跳过下载</option>
+                <option value="overwrite">覆盖重新下载</option>
+                <option value="update">仅更新标签</option>
+                <option value="error">报错并停止</option>
+              </select>
+              <svg class="ic chev"><use href="#i-chevron"/></svg>
+            </div>
+          </div>
+
+          <div class="card settings-card">
+            <div class="card-head"><div><h2>文件名</h2><p class="muted">标题必选，避免不同曲目同名覆盖。</p></div></div>
+            <div class="check-row" id="name-checks">
+              <label class="cb-label"><input type="checkbox" data-name="number"><span>序号</span></label>
+              <label class="cb-label"><input type="checkbox" data-name="artists"><span>艺人</span></label>
+              <label class="cb-label locked"><input type="checkbox" checked disabled><span>标题</span></label>
+              <label class="cb-label"><input type="checkbox" data-name="mix"><span>版本</span></label>
+            </div>
+            <div class="preview-line"><span class="muted">示例</span><code id="name-preview">01. Conspiracy 23 - Silly Things Intro (Original Mix).flac</code></div>
+          </div>
+
+          <div class="card settings-card">
+            <div class="card-head"><div><h2>下载目录</h2><p class="muted">下载完成与按曲风归档的位置。</p></div></div>
+            <div class="path-row">
+              <code id="downloads-path">（读取中…）</code>
+              <button class="btn small ghost" id="pick-dir" type="button"><svg class="ic"><use href="#i-folder"/></svg><span>更改…</span></button>
+              <button class="btn small ghost" id="open-dir" type="button">打开</button>
+            </div>
+            <p class="hint" id="dir-hint"></p>
+          </div>
+
+          <div class="card settings-card">
+            <div class="card-head"><div><h2>曲风分类</h2><p class="muted">新下载完成后按曲风建立子文件夹。</p></div></div>
+            <label class="cb-label"><input type="checkbox" id="genre-sort-enabled"><span>启用按曲风分类</span></label>
+            <div class="segmented" id="genre-sort-mode">
+              <button class="seg active" data-mode="genre" type="button">主曲风</button>
+              <button class="seg" data-mode="subgenre_or_genre" type="button">子曲风优先</button>
+            </div>
+            <div class="button-row">
+              <button class="btn small primary" id="genre-sort-save" type="button">保存并重启后端</button>
+            </div>
+            <p class="hint" id="genre-sort-hint">修改后需要重启后端才能生效；已有文件不会自动移动。</p>
+          </div>
+
+          <div class="card settings-card">
+            <div class="card-head"><div><h2>网络代理</h2><p class="muted">Beatport 接口与下载流量走代理，留空为直连。</p></div></div>
+            <div class="proxy-row">
+              <input class="input" id="proxy-input" type="text" spellcheck="false" autocomplete="off"
+                     placeholder="http://127.0.0.1:7890 或 socks5://127.0.0.1:1080">
+            </div>
+            <div class="button-row">
+              <button class="btn small primary" id="proxy-save" type="button">保存并重启后端</button>
+              <button class="btn small ghost" id="proxy-clear" type="button">改为直连</button>
+            </div>
+            <p class="hint" id="proxy-hint">当前：直连</p>
+          </div>
+
+          <div class="card settings-card">
+            <div class="card-head"><div><h2>账号</h2><p class="muted">凭据保存在本地配置文件，不经过网络传输到其他地方。</p></div></div>
+            <div class="account-row2">
+              <span class="avatar large" id="settings-avatar">B</span>
+              <div class="account-info"><strong id="settings-user">未登录</strong><span class="muted" id="settings-auth">等待认证</span></div>
+              <span class="spacer"></span>
+              <button class="btn small ghost" id="settings-login" type="button">登录</button>
+              <button class="btn small danger-ghost" id="logout-btn" type="button"><svg class="ic"><use href="#i-logout"/></svg><span>退出登录</span></button>
+            </div>
+          </div>
+
+          <div class="card settings-card update-card">
+            <div class="card-head"><div><h2>软件更新</h2><p class="muted">启动时从 GitHub Releases 检查新版本。</p></div></div>
+            <div class="update-grid">
+              <div><span class="muted">当前版本</span><strong id="update-current">v1.0.0</strong></div>
+              <div><span class="muted">最新版本</span><strong id="update-latest">—</strong></div>
+            </div>
+            <p class="hint" id="update-hint">等待检查更新…</p>
+            <div class="button-row">
+              <button class="btn small ghost" id="update-check" type="button"><svg class="ic"><use href="#i-refresh"/></svg><span>检查更新</span></button>
+              <button class="btn small primary" id="update-apply" type="button" hidden>立即更新</button>
+              <button class="btn small ghost" id="update-release" type="button" hidden>发布页</button>
+            </div>
+          </div>
+
+          <div class="card settings-card">
+            <div class="card-head"><div><h2>后端与诊断</h2><p class="muted">界面通过进程内消息桥连接 Go 后端，不额外开放端口。</p></div></div>
+            <dl class="info-list">
+              <div><dt>连接状态</dt><dd id="diag-backend">—</dd></div>
+              <div><dt>后端地址</dt><dd><code id="diag-addr">—</code></dd></div>
+              <div><dt>WebView2</dt><dd id="diag-webview">—</dd></div>
+              <div><dt>性能模式</dt><dd id="diag-perf">—</dd></div>
+              <div><dt>运行模式</dt><dd id="diag-mode">—</dd></div>
+            </dl>
+            <div class="button-row">
+              <button class="btn small ghost" id="diag-reconnect" type="button"><svg class="ic"><use href="#i-refresh"/></svg><span>重启后端</span></button>
+              <button class="btn small ghost" id="diag-log" type="button">查看后端日志</button>
+              <button class="btn small ghost" id="diag-logs-dir" type="button"><svg class="ic"><use href="#i-folder"/></svg><span>日志目录</span></button>
+            </div>
+            <pre class="log-tail" id="log-tail" hidden></pre>
+          </div>
+
+          <div class="card settings-card about-card">
+            <div class="card-head"><div><h2>关于</h2><p class="muted">BeatportDL 桌面版 · Chromium 内核</p></div></div>
+            <div class="about-row">
+              <span class="brand-mark big"><svg class="ic"><use href="#i-logo"/></svg></span>
+              <div>
+                <strong id="about-version">Beatport 下载器 1.0.0</strong>
+                <p class="muted" id="about-desc">界面运行于 Microsoft Edge WebView2（Chromium）内核。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<div class="selection-dock" id="selection-dock" hidden>
+  <span class="dock-count"><strong id="dock-count">0</strong> 首已选</span>
+  <button class="btn small ghost" id="dock-invert" type="button">反选</button>
+  <button class="btn small ghost" id="dock-clear" type="button">清空</button>
+  <button class="btn primary" id="dock-download" type="button"><svg class="ic"><use href="#i-download"/></svg><span>加入下载队列</span></button>
+</div>
+
+<div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+<div class="modal-layer" id="modal-layer" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>

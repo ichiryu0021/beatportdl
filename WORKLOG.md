@@ -1,166 +1,329 @@
 # BPDL 二次开发工作记录（AI 交接文档）
 
-> 最后更新：2026-09-15
-> 本文件供后续接手的 AI / 开发者快速了解本仓库的 Windows 桌面化改造现状。
+> 最后更新：2026-11-21
+> 本次主线：**Qt6/C++ 桌面端 → WebView2（Chromium 内核）桌面壳**，界面整体重做；
+> Go 下载后端保持原样（本机无 MSYS2/CGO 工具链，未重编）。
 > 上游通用说明仍以 [README.md](README.md) 为准，本文件只记录二次开发内容。
 
-## 1. 项目性质与架构
+## 1. 架构现状
 
-基于上游 beatportdl（Git 基线：`878d3f6 feat: interactive filters`）的 **Windows 桌面化二次开发**。
-终端用户是中文 DJ，全部界面简体中文，最终形态是便携文件夹（计划 U 盘部署）。
-
-- **后端** `cmd/beatportdl`：Go 1.27 + CGO（TagLib 写音频标签）。
-  - CLI 模式保留；新增 `--serve` 模式：本地 HTTP 服务，仅监听 `127.0.0.1:8765`。
-  - `POST /rpc`：JSON-RPC 2.0（请求体 `{jsonrpc,id,method,params}`）。
-  - `GET /events`：SSE 推送下载进度，payload 形如 `{event,url,title,reason?,percent?...}`。
-  - RPC 分发与 App 接口：[internal/server/server.go](internal/server/server.go)；CLI App 的适配实现：[cmd/beatportdl/server_adapter.go](cmd/beatportdl/server_adapter.go)。
-- **前端** [gui/](gui)：Qt6 / C++（CMake + MinGW）。
-  - [main.cpp](gui/main.cpp)：启动时探测后端，不可达则**无窗口自动拉起**同目录 `beatportdl.exe --serve`，退出时连带关闭。
-  - [main_window.cpp](gui/main_window.cpp)：四个页签——发现 / 搜索 / 定时任务 / 下载，外加设置页。
-  - [backend_client.cpp](gui/backend_client.cpp)：RPC 与 SSE 客户端。
-  - [date_range_widget.cpp](gui/date_range_widget.cpp)：日期预设控件。
-- 下载队列纯内存（`pendingURLs`，重启清空），入队自动去重，重复 URL 推 `download.skipped/reason=duplicate`。
-
-## 2. 构建、测试、部署（PowerShell）
-
-每个新 shell 必须先放开执行策略并载入 MSYS2/TagLib 环境：
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
-. .\setenv.ps1                                   # MSYS2 mingw64 gcc 16.2.0 + TagLib
-go build -o bin\beatportdl.exe .\cmd\beatportdl  # 后端
-go test -vet=off -count=1 -timeout 120s ./test/...
-$env:Path = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;" + $env:Path
-& "C:\Program Files\CMake\bin\cmake.exe" --build gui\build   # 前端
+```
+用户双击  beatportdl_gui.exe  (Go + WebView2 壳, 约 7.6 MB)
+   │
+   ├─ Win32 原生窗口（暗色标题栏、DPI 感知、单实例、窗口位置记忆）
+   ├─ WebView2 控件（系统 Edge Chromium 运行时，EdgeWebView 157.x）
+   │    └─ 内部虚拟站点 https://bpdl.app/  ⇐ 资源来自 <exe>\data\ui
+   ├─ postMessage 消息桥（进程内，不走端口、不走 fetch）
+   │    ├─ rpc  : 由宿主进程 POST 127.0.0.1:8765/rpc（复用现有后端）
+   │    └─ host : 选择目录 / 打开文件 / 资源管理器定位 / 诊断/重启后端
+   └─ 后端守护：探测 /health，必要时无窗口拉起 beatportdl.exe --serve
 ```
 
-部署目录 [test-deploy/](test-deploy)（已 gitignore）：两个 exe + Qt/MinGW DLL + plugins +
-`beatportdl-config.yml` + `beatportdl-credentials.json`（均 gitignore，不进库）。
-每次改完把 `bin\beatportdl.exe`、`gui\build\beatportdl_gui.exe` 拷进去；
-**覆盖前必须先杀掉运行中的 `beatportdl` / `beatportdl_gui` 进程**（exe 占用无法覆盖），
-最终由用户自己双击 GUI 启动验证。
+关键点：
 
-调 RPC 的姿势（PowerShell 单引号会剥 JSON，须写临时文件、UTF-8 无 BOM）：
+- **界面没有 URL 端口**。UI 由 WebView2 的虚拟主机映射（`SetVirtualHostNameToFolderMapping`）
+  以 `https://bpdl.app/` 载入，前端与宿主通过 `window.chrome.webview.postMessage` 通信。
+- **后端仍是原来的进程**：`beatportdl.exe --serve`，只监听 `127.0.0.1:8765`，
+  提供已有的 JSON-RPC（`POST /rpc`）、SSE（`GET /events`）与 `/health`。
+  这是目前唯一的回环 HTTP 连接，由宿主进程发起，页面本身不接触网络。
+- 宿主退出会 `Kill` 自己拉起的后端；同时用 Job Object（`KILL_ON_JOB_CLOSE`）兜底，
+  避免宿主崩溃后残留后端占用 8765。
+- 单实例：命名互斥量 `Local\BeatportDL.Desktop.SingleInstance`，重复启动会把已有窗口置前。
+
+## 2. 新增/修改的文件
+
+新增（Go 桌面壳）：
+
+| 路径 | 说明 |
+|---|---|
+| `cmd/bpdl-ui/main.go` | 入口：DPI、COM/STA（`runtime.LockOSThread`）、单实例、错误弹窗 |
+| `cmd/bpdl-ui/app.manifest` / `versioninfo.json` / `resource_windows_amd64.syso` | 清单（PerMonitorV2）、版本信息、exe 图标资源 |
+| `internal/desktop/` | 宿主逻辑：窗口编排、后端守护、RPC/SSE 客户端、消息桥、资源解包、性能模式 |
+| `internal/desktop/update.go` | GitHub Release 检查、zip 下载/校验、备份、更新 helper、自动重启 |
+| `internal/desktop/update_test.go` | 更新器纯逻辑单测（版本/资产/白名单/zip 安全/清单） |
+| `internal/winui/` | Win32 窗口、暗色标题栏/DWM、IFileOpenDialog、ShellExecute、Job、单实例 |
+| `internal/webview2/` | 从 `jchv/go-webview2`（MIT）裁剪适配的 WebView2 COM 层；新增虚拟主机、消息桥、DPI、导航策略等 |
+| `internal/webview2/loader/` | 纯 Go 动态加载 `WebView2Loader.dll`（无 CGO） |
+| `third_party/webview2/` | `WebView2Loader.dll` x64（NuGet 1.0.4370.26）+ LICENSE/NOTICE |
+| `internal/desktop/web/` | 前端：`index.html` + `app.css` + `app.js`（无第三方依赖） |
+| `build-desktop.ps1` | 构建外壳；`-Package` 生成便携 `dist/`；`-Version` 注入版本 |
+| `build-update.ps1` | 从 `dist/` 生成 hotfix / full 两个 GitHub Release 资产 |
+| `screenshots/desktop-*.png` | 新界面实机截图 |
+
+修改：`run-gui.bat`（改为启动新壳）、`.gitignore`（忽略 `/.tmp-*/`）。
+
+未改：Go 后端（`cmd/beatportdl`、`internal/*`、`config/`）、`gui/` Qt 源码
+（保留作回退参考，不再构建/部署）。
+
+## 3. 构建、打包、测试
 
 ```powershell
-$body = @{ jsonrpc='2.0'; id=1; method='getSettings'; params=@{} } | ConvertTo-Json -Compress
-$tmp = [System.IO.Path]::GetTempFileName()
-[System.IO.File]::WriteAllText($tmp, $body, (New-Object System.Text.UTF8Encoding($false)))
-curl.exe -s --noproxy "*" -X POST -H "Content-Type: application/json" --data-binary "@$tmp" http://127.0.0.1:8765/rpc
+# 仅构建外壳（纯 Go，无 CGO）
+.\build-desktop.ps1
+
+# 构建并生成便携目录 dist\（需要 bin\beatportdl.exe 已存在）
+.\build-desktop.ps1 -Package
+
+# 发布版：注入版本号（version.txt 记录同一版本）
+.\build-desktop.ps1 -Package -Version 1.1.0
+
+# 生成 hotfix / full 两个 Release 资产
+.\build-update.ps1 -Version 1.1.0
+
+# 等价的手工命令
+go build -trimpath -ldflags "-H windowsgui -s -w" -o bin\bpdl-ui.exe .\cmd\bpdl-ui
 ```
 
-## 3. ⚠️ TRAE 沙箱限制（极其重要，反复踩过）
+- 后端仍是 CGO 构建（TagLib），需要 MSYS2 + `setenv.ps1`：
+  `go build -o bin\beatportdl.exe .\cmd\beatportdl`。**本机当前没有 MSYS2**，
+  本次沿用已有的 `bin\beatportdl.exe`（18 MB，2025 年构建）。
+- WebView2 运行时：Windows 10/11 通常自带（本机 `C:\Program Files (x86)\Microsoft\EdgeWebView\Application\157.0.4341.60`）。
+  `WebView2Loader.dll` 必须与 exe 同目录；打包脚本会自动复制。
+- `resource_windows_amd64.syso` 由 goversioninfo 生成（图标 + 版本信息 + manifest），已提交；
+  重新生成时把生成的 `resource_windows_amd64.syso` 放进 `cmd/bpdl-ui/`（其余架构文件删掉）。
+- `go vet` 会在 `internal/winui/window.go` 报 2 处 `unsafeptr`（WndProc 的 lparam 转指针），
+  这是 Win32 回调的固有限制/误报，`go build` 不受影响。
+- 前端自检（无 WebView2 也能跑，mock 桥）：
+  ```powershell
+  msedge --headless=new --disable-gpu --window-size=1600,1000 `
+    --virtual-time-budget=20000 --screenshot=selftest.png `
+    "file:///D:/Project/BPDL/internal/desktop/web/index.html?selftest=1"
+  ```
+  截图左下角应显示 `SELFTEST OK`；`?view=discover|search|scheduler|downloads|settings`
+  可直接预览某一页。
+- 实机截图（硬件加速下全屏 GDI 截图会发白）：用 `PrintWindow(hwnd, hdc, PW_RENDERFULLCONTENT=2)`。
+- 真实联调可用 Windows UIAutomation 点击界面（`AutomationElement.FromHandle` +
+  `InvokePattern`），已验证发现页/搜索/设置/定时页均可用；HTML 元素的 `AutomationId`
+  就是 DOM id（如 `proxy-input`/`proxy-save`/`genre-sort-save`）。
+- 纯 Go 测试：`go test ./internal/desktop ./test/sorting/`（配置写入/代理校验/曲风归档/
+  更新器版本与包校验）。
 
-AI Agent 通过 Shell 启动的**任何**进程（含 GUI 拉起的后端链）写入
-`C:\Users\jason\Downloads` 都会被过滤驱动拦截：表现为 `Access is denied` 或留下 **0 字节文件**；
-即使 `dangerouslyDisableSandbox: true` 也无效。NTFS ACL 本身正常（用户 FullControl）。
+## 4. 桥协议（宿主 ↔ 前端）
 
-- **工作区目录（BPDL 仓库内）读写完全正常**：后端测试用 `setDownloadsDirectory` RPC
-  指到仓库内临时目录（如 `dl-test/`），测完删除并把配置改回真实目录。
-- 任何改配置的测试结束后，确认 test-deploy 配置恢复为
-  `downloads_directory: C:/Users/jason/Downloads/BeatportDL`。
-- **真实下载链路的最终验证只能让用户自己双击 GUI**。Agent 不要尝试替用户点 GUI 下载。
-- 历史上的两个 0 字节 flac（panic 中途 `os.Create` 残留）会触发 `track_exists=skip` 误判"已下载"，
-  需用户在资源管理器手动删除；截至 2026-09-15 已清理，下载目录内 4 首 FLAC 大小均正常。
+页面 → 宿主：`window.chrome.webview.postMessage(JSON.stringify({...}))`
 
-## 4. 2026-09-14 ~ 15 已完成改动
+| 字段 | 说明 |
+|---|---|
+| `{kind:"rpc", id, method, params}` | 调后端 JSON-RPC；宿主返回 `rpc.result` / `rpc.error` |
+| `{kind:"host", id, action, ...}` | 原生操作，见下表 |
+| `{kind:"ui", action:"ready"}` | 页面就绪；宿主回 `hello` + 当前后端状态并开始转发 SSE |
+| `{kind:"ui", action:"log", level, message}` | 前端异常/诊断写入 `logs/gui.log` |
+| `{kind:"ui", action:"retryBackend"}` | 重启后端 |
 
-### 4.1 GUI 自动托管后端，消除黑控制台（gui/main.cpp）
-- `probeBackend()`：GET `/health`，1.5s 超时。
-- `locateBackendExe()`：先找 GUI 同目录 `beatportdl.exe`，回退 `../../bin/`。
-- `startBackendHidden()`：QProcess + `CREATE_NO_WINDOW`，MergedChannels 重定向到
-  `<目录>/logs/backend.log`（Append，启动写分隔行）。
-- main()：探测失败→拉起→轮询最多约 15s（进程提前退出则立即失败并弹框指明日志路径）；
-  `aboutToQuit` 时只 kill **自己拉起**的后端（用户手动启动的不动）。
+宿主 `host` 动作：`pickFolder`、`openPath`、`openExternal`、`revealPath`、`openLogs`、
+`openDataDir`、`backendTail`、`info`、`restartBackend`、`getNetworkSettings`、
+`setProxy`、`setGenreSort`、`stopDownloads`、`checkUpdate`、`applyUpdate`。
 
-### 4.2 日期控件"最新"预设 +【今日】按钮（gui/date_range_widget.*）
-- 下拉：最新（默认，不传日期、新到旧）/最近一周/最近一个月/最近半年/自定义范围…
-- 非自定义时隐藏起止日期框；`fromIso()/toIso()` 在"最新"返回空串。
-- 【今日】按钮一键把起止设为今天（QSignalBlocker 防重复信号）。
-- 评估后未做键盘快捷输入：QDateEdit 原生支持逐段输入与分隔符跳段。
+其中 `getNetworkSettings` 读取配置里的 `proxy` / `sort_by_genre` / `genre_sort_mode`；
+`setProxy` / `setGenreSort` 由宿主**直接改写 YAML 配置并重启后端**（不依赖后端 RPC）；
+`stopDownloads` 同样是“杀掉后端 → 重新拉起”，用于立即停止整个下载队列。
+`checkUpdate` / `applyUpdate` 走 GitHub Release 更新器，进度通过 `{kind:"update"}` 消息推送。
 
-### 4.3 曲风过滤修复：必须传显示名而非 slug（gui/main_window.cpp）
-- 发现页/定时页 genre combo 的 itemData 存**显示名**（如 `Afro House`，addItem(name, name)），
-  不是 slug（`afro-house` 会返回 0 首）。实测 Afro House 50 首。
+宿主 → 页面：
 
-### 4.4 勾选行蓝色高亮
-- 匿名 namespace `setRowChecked()`：勾选时 `setBackground(QColor(72,128,214,72))`，取消清空。
-- 已覆盖：追加结果、全选/清空、Shift 连选三处所有 setCheckState。
+- `{kind:"hello", data:{appVersion, webviewVersion, backendAddr, username, performanceMode, …}}`
+- `{kind:"backend", state:"ready|starting|down", message}`
+- `{kind:"events.status", connected, message}`
+- `{kind:"events.batch", events:[SSE payload, …]}`（70 ms 合批，最多 200 条）
+- `{kind:"update", state, percent, stage, message, data}`（检查/下载/安装/重启）
+- `{kind:"rpc.result"/"rpc.error"/"host.result"/"host.error", id, …}`
 
-### 4.5 serve 模式 nil pointer panic 修复
-- [cmd/beatportdl/utils.go](cmd/beatportdl/utils.go)：进度条工具函数加
-  `if pbPrefix != "" && app.pbp != nil`（serve 模式无 mpb 进度条实例）。
-- [cmd/beatportdl/concurrency.go](cmd/beatportdl/concurrency.go)：两处 recover 改为
-  打印 `panic recovered: %v` + `runtime/debug.Stack()` 完整堆栈。
-- 该 panic 曾在真实下载时中断并留下 0 字节文件（见 §3）。
+后端 SSE 事件形状未改动：`download.started/progress/done/error/skipped`、`log`、
+`scheduler.found`、`auth.loggedOut`。**下载事件键仍必须是用户提交的原始 URL**
+（见旧版本 §4.6 的坑：API URL 与 StoreUrl 不一致会导致两行任务）。
 
-### 4.6 ★同一首歌下载列表出现两行（一行永远"排队中"、一行"已跳过"）
-**根因——事件键不匹配**：
-- getLatest/search 返回的 `url` 是 `https://api.beatport.com/v4/catalog/tracks/<ID>/`，
-  GUI 用它做下载行键 `m_dlRows` 并原样提交 download RPC。
-- 后端 SSE 事件却用 `track.StoreUrl()`（`https://www.beatport.com/track/<slug>/<ID>`）。
-- GUI 收到找不到键的事件就 `ensureDownloadRow` 另建一行 → 两行；
-  乐观插入的行永远停在"排队中"。
-- "自动下载/定时任务加歌"系误解：日志证实只有一次手工 enqueue，无定时任务；
-  当前交互是**单击结果行即勾选/取消**（无独立选中态），误点第一行所致。
+## 5. 界面功能（全中文）
 
-**修复**（[cmd/beatportdl/downloader.go](cmd/beatportdl/downloader.go)）：
-- `saveTrack(track, dir, quality, eventURL string)`：空串才回退 `StoreUrl()`；progress 用 eventURL。
-- `handleTrack(track, dir, coverPath, sourceURL string)`：started/error/skipped/done/归档日志全用 eventURL。
-- 单曲入口 `handleTrackLink` 传 `link.Original`（即用户提交的 URL，关键）；
-  专辑/歌单/厂牌/艺人等子曲目传 `""`（回退 StoreUrl，GUI 对这些 URL 同样以 StoreUrl 建键）。
-- 验证：API 形式 URL 提交时，预置 0 字节文件 → started/skipped 键与提交 URL 完全一致；
-  正常下载 → started/done 键一致，6.87MB FLAC + 44.1kHz 校验通过。
-- **铁律：以后新增任何 download.* 事件，URL 必须沿用"用户提交的原始 URL"，不得自行换 StoreUrl()。**
+- 左侧导航：发现最新 / 搜索 / 定时任务 / 下载队列 / 设置；可收起为图标栏（Ctrl+B）。
+- 顶栏：启动异步检查 GitHub 最新 Release；发现新版本时右上角显示
+  「新版本 vX」药丸，点击查看更新说明并一键更新。
+- 发现：曲风多选（显示名，支持搜索）、曲目/专辑、日期预设（最新/一周/一月/半年/自定义/今日）、
+  无限滚动、虚拟列表、全选/清空/Shift 连选、底部悬浮“加入下载队列”。
+- 搜索：关键词搜索曲目/专辑/厂牌，空状态提供快捷词；粘贴 Beatport 链接直接入队。
+- 定时任务：1 天/1 周/1 月/3 月间隔、限定曲风、启动/停止、实时日志。
+- 下载队列：统计卡、状态筛选、**全选/勾选、暂停队列、继续、停止全部、删除所选**；
+  真实进度/速度（原地更新不重排）、失败原因、跳过原因、完成后资源管理器定位、
+  重试、打开浏览器；已结束记录存 localStorage（最多 400 条），后端队列仍是内存态。
+  - UI 侧本地调度：只向仍无取消 API 的后端提交最多约 10 首；其余在本地 `waiting`。
+    因此暂停/删除对“尚未提交”的任务是真实有效的；已提交的下载中任务无法单条撤销，
+    只能“停止全部”（杀后端重启，可能留下半文件，UI 会二次确认并提示）。
+  - 队列顺序按“加入序号 seq”稳定排序：进行中/排队在前，已结束在后；进度事件绝不改变顺序。
+    行内容在进度更新时只原地修改进度条/文本，不重建 DOM，避免进度条重置与视觉跳动。
+- 设置：音频格式（4 档）、已存在文件策略、文件名勾选（序号/艺人/标题/版本）+ 实时示例、
+  下载目录（原生选择器/打开）、**网络代理**（http/https/socks5，写配置并重启后端；
+  同时注入 HTTP(S)_PROXY 给后端的下载请求）、**曲风分类**（启用/主曲风/子曲风优先，
+  写 `sort_by_genre`/`genre_sort_mode` 并重启后端）、**软件更新**（GitHub 检查/立即更新/
+  发布页）、账号登录/退出、后端诊断、关于。
+  - 曲风分类只影响**之后完成**的下载；已经平铺在下载目录根部的旧文件不会自动移动。
+    后端启动时读取该配置，因此修改后必须重启后端才生效（UI 已自动处理）。
+- 登录：启动时 `authStatus` 未认证则弹登录框；用户名保留在配置里并显示于侧栏
+  （宿主只读取 `username:`，不读密码），密码只写入配置文件。
+- 键盘：`Ctrl+K` / `/` 搜索、`Ctrl+B` 收起侧栏、`Ctrl+A` 全选结果或下载行、`Esc` 关闭弹层/清空选择、
+  `Enter` 搜索。
 
-### 4.7 定时任务间隔改大粒度预设（gui/main_window.cpp 设置/定时页）
-- 分钟 QSpinBox → QComboBox：一天 86400 / 一周 604800 / 一个月 2592000 / 三个月 7776000 秒，
-  itemData 存秒数，默认"一天"。原因：Beatport 网站更新不快。
+## 6. 性能相关的设计
 
-### 4.8 文件名命名方式可配置（设置页勾选）
-- 后端新增 RPC `setTrackFileTemplate {template}`，并在 `getSettings` 返回 `track_file_template`。
-  - 适配层 [server_adapter.go](cmd/beatportdl/server_adapter.go)：
-    `TrackFileTemplate()` / `SetTrackFileTemplate()`，保存到配置并即时生效；
-    **强制模板含 `{name}`**，否则报错拒绝（防止不同曲目同名互踩）。
-- GUI 设置页"文件名："一行四个复选框，从左到右：**序号 / 艺人 / 标题 / 版本**；
-  标题恒选且禁用取消；下方实时示例（如
-  `示例：01. Conspiracy 23 - Silly Things Intro (Original Mix).flac`）。
-  - 拼模板：`[{number}. ][{artists} - ]{name}[ ({mix_name})]`
-  - 函数：`buildNameTemplate()` / `applyNameTemplate()`（模板反填勾选，兼容自定义模板）/ `refreshNamePreview()`。
-  - 回填期间 `m_namingReady=false` 屏蔽误发 RPC；RPC 失败弹回上一次模板。
-- 占位符由下载流程渲染（配置默认模板 `{number}. {artists} - {name} ({mix_name})`，
-  定义见 [config/config.go](config/config.go)）。
-- 已知权衡：仅 `{name}` 时按曲风平铺目录下同名异作会被 skip 跳过；建议勾"艺人"，
-  需要区分同一曲不同混音再勾"版本"。用户当前选择：**仅标题**（见 §6）。
+- **无 UI 端口**：虚拟主机 + postMessage，页面不发 HTTP 请求（也就没有 CORS 问题）。
+- 虚拟列表：只渲染可视区 ±5 行；数据/选择变化同步重排，滚动用 rAF 节流。
+- SSE 合批：宿主 70 ms 聚合事件后再发；前端每帧合并渲染（`markDirty` + `requestAnimationFrame`）。
+- 下载列表稳定排序：`seq` 固定；进度/`updatedAt` 不参与排序；行内进度条原地更新。
+- 进度写入 localStorage 做 900 ms 防抖；topbar 按签名缓存，避免每批进度重建 DOM。
+- 选中数 O(1)；虚拟列表渲染同步，避免“数据到了但列表短暂空白”。
+- WebView2 浏览器参数在启动时设置：
+  - 默认 GPU：`--no-first-run --disable-background-networking --disable-component-update
+    --disable-sync --disable-extensions --disable-breakpad --js-flags=--max-old-space-size=128
+    --disk-cache-size=33554432`
+  - 物理内存 < 9 GB 或 `--low-memory`：追加 `--disable-gpu --enable-low-end-device-mode
+    --disk-cache-size=8388608`（软件渲染，内存明显降低）。
+  - 若环境已有 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`，尊重用户设置（诊断页显示“自定义”）。
 
-## 5. RPC 方法清单（internal/server/server.go switch）
+本机实测（3440×1440 / 32 GB / EdgeWebView 157）：
 
-`search` `getLatest` `getGenres` `download` `setDownloadsDirectory` `getDownloadsDirectory`
-`getSettings` `setQuality` `setTrackExists` `setTrackFileTemplate`（本轮新增）
-`login` `logout` `authStatus` `startScheduler` `stopScheduler` `schedulerStatus`。
+| 指标 | WebView2 壳 | 旧 Qt 壳 |
+|---|---|---|
+| 启动到窗口可见 | 约 0.25–0.35 s | 约 0.3–0.5 s |
+| 内存（UI 部分私有） | GPU 模式约 345 MB；`--low-memory` 约 235 MB | 约 43 MB |
+| 程序目录 | dist 约 29.2 MB（含后端/DLL） | test-deploy 曾约 100 MB |
 
-SSE 事件：`download.started/progress/skipped(reason=exists|duplicate)/error/done`。
-App 接口新增方法时，同步改 server.go 的 `App` interface 与 server_adapter.go 实现（目前无 mock）。
+> Chromium 多进程本身比 Qt Widgets 占内存，这是内核选择的代价；界面观感、滚动流畅度、
+> 列表规模与可维护性明显提升。介意内存时用 `--low-memory` 启动。
 
-## 6. 当前运行配置（test-deploy/beatportdl-config.yml，不入库）
+## 7. 本版踩过/修好的关键坑
 
-`quality=lossless`、`track_exists=skip`、`sort_by_genre=true`、`genre_sort_mode=genre`、
-`verify_integrity=true`、`track_file_template='{name}'`、
-`downloads_directory=C:/Users/jason/Downloads/BeatportDL`。
-后端日志：`test-deploy/logs/backend.log`（GUI 重定向；手工调试可用 bat 把
-`exe --serve` 输出重定向，直接 Start-Process 会丢输出）。
+1. **UI 线程必须固定**：WebView2 与 Win32 要求同一 STA 线程。入口已 `runtime.LockOSThread()`；
+   去掉后曾出现“窗口不出、导航不触发、进程假死”的间歇性 hang。
+2. **窗口尺寸持久化**：保存的是窗口外框尺寸，恢复时必须原样使用，不能再按 client 尺寸加边框，
+   否则每次启动窗口都会变大。
+3. **全屏 GDI 截图发白**：WebView2 硬件合成下 `CopyFromScreen` 可能抓不到内容，改用
+   `PrintWindow(..., 2)`；这不是界面 bug。
+4. **艺人是数组**：后端 `artists` 返回 `[{name:"A, B"}]`，前端需 `joinArtists` 展开去重，
+   否则显示 `[object Object]`。
+5. **专辑/厂牌链接不要建乐观行**：后端展开子曲目后用 StoreUrl 发事件，父级 URL 永远等不到
+   更新；仅 `*/track/*` 或 `*/catalog/tracks/*` 才预建“排队中”行。
+6. **旧 Qt 部署目录**：`test-deploy/legacy-qt/` 放旧 Qt exe + Qt DLL/插件，可回退；
+   `test-deploy/` 根目录现在放新壳 + 后端 + TagLib DLL + `WebView2Loader.dll`。
+   旧 Qt 需要的 `libgcc/libstdc++/libwinpthread` 已复制一份到 `legacy-qt/`。
+7. **配置自动创建**：`<exe>/beatportdl-config.yml` 不存在时，宿主会写一份最小配置
+   （下载目录默认 `%USERPROFILE%\Downloads\BeatportDL`），避免隐藏控制台的后端进入
+   交互式首次配置而卡死。若 exe 目录不可写，则写 `data/` 并用 `--config` 指定。
+8. **后端关闭**：正常退出会显式 Kill 子进程 + Job 兜底；实测关窗后 GUI 与后端均退出。
+   强杀宿主时 Job 生效；若用户自己启动的后端则不会动。
+9. **原生目录选择器**：`IFileOpenDialog` 放在独立 STA 线程上执行（`internal/winui/dialog.go`），
+   避免重入 WebView2 的 COM apartment；实测可正常打开、取消返回 `0x800704C7`（path 为空）、
+   宿主日志会打印 `picker:` 诊断行。选择结果经 `setDownloadsDirectory` RPC 立即生效。
+   UI 侧 `pickFolder` 通过 `window.Post` 转发并在 goroutine 中等待，不阻塞 WebView2 消息回调。
 
-## 7. 用户偏好（沟通与决策）
+## 8. 当前部署
+
+- `dist/`：干净便携版 **v1.1.0**（29.5 MB，gitignore）：`beatportdl_gui.exe`、`beatportdl.exe`、
+  `WebView2Loader.dll`、6 个 TagLib/运行时 DLL、`启动.bat`、`version.txt`；
+  **不再包含** `beatportdl-config.yml`、`beatportdl-credentials.json`、`data/`、`logs/`。
+  首次运行会生成 `data/`（UI 资源、WebView2 用户数据、窗口状态）与 `logs/`。
+- `test-deploy/`：已换成新壳，保留用户原来的配置/凭据并恢复自动登录；
+  `legacy-qt/` 为旧版（约 75 MB，可整体删除；根目录新壳 + 后端约 29.2 MB）。
+- 自检：`?selftest=1` 当前输出 `SELFTEST OK`（mock：发现 60 首 / 勾选 / 入队 / 下载页 5 行 /
+  顺序稳定 / 暂停切换 / 停止全部 / 删除所选 / 设置 / 曲风 / 搜索 4 条）；
+  真实后端联调（副屏 DISPLAY6）：发现 60 首、搜索 Anyma 返回 21 条、
+  设置页读回下载目录与 GPU 模式、原生目录选择器可开可取消；
+  代理保存（`http://127.0.0.1:9`）→ 配置 `proxy` 行写入、后端重启日志出现该代理；
+  改回直连 → `proxy: ''`、后端重启为“直连”；曲风分类保存 → 后端按
+  `sort_by_genre: true / genre_sort_mode: 'genre'` 重启。
+- **曲风归档实测通过**：临时把下载目录指到 `dl-test/`、质量切到 AAC 128k 下载 1 首，
+  文件最终落在 `dl-test/House/You Lit Me Up (Original Mix).m4a`，后端日志出现
+  `filed into genre: House`；测试后已恢复 `downloads_directory: D:\DJMusLib` 与
+  `quality: lossless`，并删除测试文件。
+- 用户机器 `D:\DJMusLib` 根部的旧 flac 是曲风分类生效前的产物；后端已在 20:55 用
+  `sort_by_genre: true` 重启，之后的新下载会进入 `<曲风>/` 子目录，旧文件不会自动移动。
+- 配置/凭据都不进 git；**不要把 dist 直接公开**（内含账号凭据缓存）。
+- 真实下载链路的最终验证仍建议用户双击 GUI 自己操作一次（特别是曲风分类与暂停/停止）。
+
+## 9. 已知限制 / 后续候选
+
+- 本机无 MSYS2/CGO，后端未重编；若要加封面、BPM、厂牌、发布日期等 RPC 元数据或后端级
+  单任务取消，需要先搭回 CGO 工具链。当前列表封面是用 URL 哈希生成的渐变占位，不是真图。
+- **单条“下载中”任务无法真正暂停/删除**：后端没有取消接口，宿主也不掌握每首的临时文件路径。
+  已提交任务只能“停止全部”（杀后端重启）；等待中的任务可自由暂停/删除。
+- 停止全部/改代理/改曲风分类都会重启后端，可能留下下载到一半的文件；UI 有明确确认提示。
+- 下载队列仍是后端内存态（重启清空）；界面用 localStorage 保留“已结束”记录用于追溯。
+- 曲风分类是后端启动时的配置；已有平铺文件不会自动整理（如需要可另做“按标签整理已有文件”）。
+- WebView2 运行时缺失时会弹原生提示并给出安装链接；无法像 Electron 一样自带内核。
+- 旧 Qt 源码保留但不再维护；若彻底切换，可后续删除 `gui/`。
+- 自动化测试入口：`?selftest=1` 覆盖加载、勾选、入队、切页、顺序稳定、暂停、停止全部、
+  删除所选、设置、曲风、搜索（mock）；`?preselect=1&view=downloads` 可预览多选操作栏。
+
+## 10. 用户偏好（沟通与决策）
 
 - 全程中文交流；UI 全简体中文。
-- 不主动建 md/文档、不主动 git commit（本次均为用户明确要求）。
+- 不主动建文档、不主动 git commit（本次均为明确要求时例外）。
 - 面向便携 U 盘部署；网站更新慢，定时类功能用大间隔。
 - 需求边界克制：只做被要求的事，不自行扩展。
+- 界面/窗口测试尽量放在副屏（DISPLAY6），不打扰主屏使用。
 
-## 8. 后续候选 / 留意点
+## 11. 自动更新（GitHub Releases）
 
-- 单击结果行即勾选的交互容易被误以为"自动下载"，若用户再提可考虑改为复选框热区+独立选中态。
-- `{name}` 单段命名的同名冲突目前未实际遇到；真出现时引导勾艺人/版本，或考虑后端自动加序号后缀。
-- test-deploy 与 gui/build 已加入 .gitignore，换机器/新克隆需手动准备 DLL 与配置。
-- 构建依赖 MSYS2 mingw64 + TagLib + CMake + Go 1.27；环境脚本 [setenv.ps1](setenv.ps1)，
-  工具链安装见 [install-build-tools.bat](install-build-tools.bat)，便携启动 [run-gui.bat](run-gui.bat)。
+这一版按 `D:\Project\二游档案\electron\updater.cjs` 的方案移植：启动检查最新 Release、
+顶栏出现新版本提示、优先下载最小包、失败可回落完整包、更新前备份、校验后自动重启。
+宿主是 Go/WebView2，所以下载/解压/替换用纯 Go 和 `archive/zip` 实现，不依赖 PowerShell。
+
+### 更新源与资产
+
+- 更新源常量：`internal/desktop/update.go` 的 `DefaultUpdateRepo`
+  （当前 `ichiryu0021/beatportdl`，即用户有 admin 权限的 fork）。
+- API：`https://api.github.com/repos/ichiryu0021/beatportdl/releases/latest`。
+- 版本比较使用数字段（`v1.1.0` / `1.1.0` / 旧 `x.y.z` 均兼容）；当前版本由
+  `internal/desktop/assets.go` 的 `Version` 提供。
+- Release 资产命名固定：
+  - 最小包：`bpdl-hotfix-v<version>.zip`（`beatportdl_gui.exe` + `WebView2Loader.dll` + `update.json`）
+  - 完整包：`bpdl-v<version>-full.zip`（主程序 + 后端 + 运行库 + `启动.bat` + `update.json`）
+  - 完整包**不含** `beatportdl-config.yml`、`beatportdl-credentials.json`、`data/`、`logs/`。
+- 更新器优先用 hotfix；hotfix 安装失败且存在完整包时，UI 提示“是否下载完整版”，
+  完整包仍只替换程序文件，不动用户数据。
+
+### 运行流程
+
+1. 启动约 0.9 s 后异步 `checkUpdate`，结果只在内存缓存 10 分钟；设置页可手动强制检查。
+2. 右上角出现「新版本 vX」药丸，点击打开更新说明弹窗；设置页也有「软件更新」卡片。
+3. 点「立即更新」：若本地队列还有未完成任务，先二次确认（更新会中断下载）。
+4. 宿主下载 zip（显示百分比/字节），校验 zip 路径、`update.json` 版本、主程序 PE 头/大小。
+5. 只把运行库白名单文件复制到隔离的 `stage/`；配置、凭据、`data/`、`logs/` 永远不进入更新包。
+6. 备份当前同名运行文件到 `data/backups/update-<version>-<stamp>/`（保留最近 8 份）。
+7. 把当前 exe 复制成临时 `bpdl-updater.exe`，以 `--apply-update` 启动；主程序 WM_CLOSE 退出。
+8. 更新 helper 等待主进程 PID 退出，重试复制 stage 文件；校验新 exe 后启动新程序。
+   复制失败则从备份恢复旧文件并重新启动旧版本；过程写入 `logs/update.log` 与
+   `data/update-state.json`。
+9. helper 在 `main()` 最前面（COM/WebView2/单实例之前）识别参数，不会打开第二个窗口。
+
+### 构建/发布
+
+```powershell
+# 1. 出带版本号的便携包（Version 会通过 -ldflags -X 注入，version.txt 记录）
+.\build-desktop.ps1 -Package -Version 1.1.0
+
+# 2. 从 dist 生成两个 Release 资产
+.\build-update.ps1 -Version 1.1.0
+
+# 3. 在 GitHub 建 tag v1.1.0 + Release，上传：
+#    dist\bpdl-hotfix-v1.1.0.zip
+#    dist\bpdl-v1.1.0-full.zip
+```
+
+- `build-update.ps1` 会校验 `dist\version.txt` 与 `-Version` 一致，防止 exe 版本和
+  Release 版本不一致造成“更新后又提示同一版本”的循环。
+- **首次升级必须手动装一次**：当前 v1.0.0 没有更新代码；装上本版（建议 1.1.0）后，
+  以后的 v1.1.x 才会自动更新。GitHub 上现有最新 Release 是 v1.0.0（旧 Qt 包，且没有
+  BPDL zip 资产），所以在发布 v1.1.0 之前真实界面不会出现提示。
+- 预览更新 UI：`index.html?update=1`（mock 返回 v1.1.0）；`&updialog=1` 自动打开弹窗。
+
+### 校验
+
+- 纯 Go 单测：版本比较、资产选择、运行文件白名单、zip 路径穿越、版本清单、updater 参数。
+- 更新 helper 已用隔离临时目录实测：替换主程序、保留 config/credentials/data、写
+  `update-state.json=ok`、启动新程序均正常。
+- 真实 GitHub API 检查已实测（当前 latest=v1.0.0，正确识别为无更新）。
+- 本轮已完成 **v1.1.0 干净打包**（无配置/凭据/data/logs），更新了 `test-deploy/`
+  运行文件并保留原配置；`test-deploy` 已启动为 v1.1.0，真实检查更新返回
+  “当前 v1.1.0 / 最新 v1.0.0 / 无更新”。
+- GitHub 侧：按用户确认，保留 `ichiryu0021/beatportdl` 仓库与历史，清理全部旧
+  Release/tag，推送新源码，创建 `v1.1.0` Release 并上传
+  `bpdl-hotfix-v1.1.0.zip` 与 `bpdl-v1.1.0-full.zip`。
+
