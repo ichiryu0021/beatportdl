@@ -18,3 +18,7 @@ downloads/
 /.pkg-tmp/
 /.tmp-*/
 
+
+# 本地 QA 截图（含个人路径/账号），不进入公开仓库
+/screenshots/desktop-*.png
+
