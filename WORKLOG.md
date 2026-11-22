@@ -502,3 +502,11 @@ go build -trimpath -ldflags "-H windowsgui -s -w" -o bin\bpdl-ui.exe .\cmd\bpdl-
 - 只修正曲风/子曲风选择弹层：选中行改为纸白底 + 左侧石墨标记，选中勾选框为
   白底深色勾；未选中的勾选框为灰色，选中状态不再比未选状态更暗。
 - 版本号递增到 1.1.4。
+
+## 25. v1.1.5 发布
+
+- 版本号 1.1.5；资源版本、exe 文件版本、README、`version.txt` 同步。
+- 干净打包：release 资产仅含程序、后端、运行库、启动脚本和 update.json；
+  不含配置、凭据、`data/`、`logs/`；本地清洁打包保留这些用户文件。
+- 本版包含：发现页专辑类型可用（修复 releases API 的 streaming 参数）、
+  白灰主题曲风页签选中态、选择浮条白灰样式与更小主按钮、勾选符号 1px 对齐。

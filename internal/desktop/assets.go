@@ -25,7 +25,7 @@ var webAssets embed.FS
 // Version is the application version reported to the UI and compared against
 // GitHub Release tags. It is a var (not a const) so build-desktop.ps1 can inject
 // the release version with -ldflags -X.
-var Version = "1.1.4"
+var Version = "1.1.5"
 
 func assetHash() (string, error) {
 	h := sha256.New()
