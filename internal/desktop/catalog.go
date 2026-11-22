@@ -306,7 +306,9 @@ func (m *catalogManager) fetchDiscoverPage(token string, p discoverLatestParams,
 	}
 	q.Set("page", strconv.Itoa(p.Page))
 	q.Set("per_page", strconv.Itoa(p.PerPage))
-	q.Set("is_available_for_streaming", "true")
+	if p.Kind != "releases" {
+		q.Set("is_available_for_streaming", "true")
+	}
 	if filter.Key != "" {
 		q.Set(filter.Key, filter.Value)
 	}

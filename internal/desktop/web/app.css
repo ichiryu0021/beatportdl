@@ -486,7 +486,7 @@ kbd {
 }
 .cb input:checked + span::after {
   content: "";
-  position: absolute; left: 5px; top: 2px;
+  position: absolute; left: 4px; top: 1px;
   width: 5px; height: 9px;
   border: solid var(--accent-ink); border-width: 0 2px 2px 0;
   transform: rotate(42deg);
@@ -498,7 +498,7 @@ kbd {
 .cb-label { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 12.5px; cursor: pointer; }
 .cb-label input { appearance: none; width: 18px; height: 18px; margin: 0; border: 1.5px solid rgba(255,255,255,.24); border-radius: 6px; background: rgba(6,10,15,.6); position: relative; cursor: pointer; }
 .cb-label input:checked { background: var(--accent); border-color: var(--accent); }
-.cb-label input:checked::after { content: ""; position: absolute; left: 5px; top: 2px; width: 5px; height: 9px; border: solid var(--accent-ink); border-width: 0 2px 2px 0; transform: rotate(42deg); }
+.cb-label input:checked::after { content: ""; position: absolute; left: 4px; top: 1px; width: 5px; height: 9px; border: solid var(--accent-ink); border-width: 0 2px 2px 0; transform: rotate(42deg); }
 .cb-label.locked { opacity: 0.75; cursor: default; }
 
 /* ----------------------------------------------------------- filter card */

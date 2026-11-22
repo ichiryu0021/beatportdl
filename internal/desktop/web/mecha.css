@@ -1279,22 +1279,52 @@ html[data-theme="mecha"][data-mecha-variant="light"] .popover { background: #f8f
 html[data-theme="mecha"][data-mecha-variant="light"] .popover-search { background: #f3f1e9; border-bottom-color: rgba(42, 49, 44, 0.15); }
 html[data-theme="mecha"][data-mecha-variant="light"] .popover-search input { color: #10120f; }
 html[data-theme="mecha"][data-mecha-variant="light"] .genre-tabs { border-bottom-color: rgba(42, 49, 44, 0.15); }
-html[data-theme="mecha"][data-mecha-variant="light"] .genre-tab { color: #5b6158; border-right-color: rgba(42, 49, 44, 0.12); text-shadow: none; }
-html[data-theme="mecha"][data-mecha-variant="light"] .genre-tab.active { color: #10120f; border-bottom-color: #4f554f; background: rgba(79, 85, 79, 0.08); }
+html[data-theme="mecha"][data-mecha-variant="light"] .genre-tab { color: #5b6158; border-right-color: rgba(42, 49, 44, 0.12); background: #dedcd1; text-shadow: none; }
+html[data-theme="mecha"][data-mecha-variant="light"] .genre-tab.active { color: #10120f; border-bottom-color: #4f554f; background: #fbf9f2; }
 html[data-theme="mecha"][data-mecha-variant="light"] .genre-option { color: #2d322c; text-shadow: none; }
 html[data-theme="mecha"][data-mecha-variant="light"] .genre-option:hover { background: rgba(79, 85, 79, 0.08); color: #10120f; }
-html[data-theme="mecha"][data-mecha-variant="light"] .genre-option[aria-selected="true"] { color: #10120f; background: #fbf9f2; box-shadow: inset 2px 0 0 #4f554f; }
+html[data-theme="mecha"][data-mecha-variant="light"] .genre-option[aria-selected="true"] { color: #10120f; background: rgba(79, 85, 79, 0.12); }
 html[data-theme="mecha"][data-mecha-variant="light"] .genre-option .tick,
-html[data-theme="mecha"][data-mecha-variant="light"] .subgenre-row .tick { background: #c9c7bb; border-color: rgba(42, 49, 44, 0.42); }
+html[data-theme="mecha"][data-mecha-variant="light"] .subgenre-row .tick { background: #fbf9f2; border-color: rgba(42, 49, 44, 0.28); }
 html[data-theme="mecha"][data-mecha-variant="light"] .genre-option[aria-selected="true"] .tick,
-html[data-theme="mecha"][data-mecha-variant="light"] .subgenre-row[aria-selected="true"] .tick { background: #fbf9f2; border-color: #4f554f; color: #10120f; }
+html[data-theme="mecha"][data-mecha-variant="light"] .subgenre-row[aria-selected="true"] .tick { background: #b4b6ab; border-color: #4f554f; color: #10120f; }
 html[data-theme="mecha"][data-mecha-variant="light"] .subgenre-head { background: #f3f1e9; border-bottom-color: rgba(42, 49, 44, 0.15); color: #5b6158; }
 html[data-theme="mecha"][data-mecha-variant="light"] .subgenre-row { color: #2d322c; }
 html[data-theme="mecha"][data-mecha-variant="light"] .subgenre-row:hover { background: rgba(79, 85, 79, 0.08); color: #10120f; }
-html[data-theme="mecha"][data-mecha-variant="light"] .subgenre-row[aria-selected="true"] { color: #10120f; background: #fbf9f2; box-shadow: inset 2px 0 0 #4f554f; }
+html[data-theme="mecha"][data-mecha-variant="light"] .subgenre-row[aria-selected="true"] { color: #10120f; background: rgba(79, 85, 79, 0.12); }
 html[data-theme="mecha"][data-mecha-variant="light"] .subgenre-parent { color: #5f655c; }
 html[data-theme="mecha"][data-mecha-variant="light"] .popover-foot { background: #f3f1e9; border-top-color: rgba(42, 49, 44, 0.15); }
 html[data-theme="mecha"][data-mecha-variant="light"] .popover-foot .muted { color: #5b6158; }
+
+html[data-theme="mecha"][data-mecha-variant="light"] .selection-dock {
+  border-color: rgba(42, 49, 44, 0.3);
+  background: #f8f6ef;
+  box-shadow: 0 16px 44px rgba(42, 49, 44, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+  backdrop-filter: none;
+}
+html[data-theme="mecha"][data-mecha-variant="light"] .selection-dock .dock-count { color: #4f554f; }
+html[data-theme="mecha"][data-mecha-variant="light"] .selection-dock .dock-count strong { color: #10120f; }
+html[data-theme="mecha"][data-mecha-variant="light"] .selection-dock .btn.ghost {
+  color: #2d322c;
+  border-color: rgba(42, 49, 44, 0.22);
+  background: rgba(255, 255, 255, 0.55);
+  text-shadow: none;
+}
+html[data-theme="mecha"][data-mecha-variant="light"] .selection-dock .btn.ghost:hover {
+  color: #10120f;
+  border-color: rgba(42, 49, 44, 0.4);
+  background: rgba(79, 85, 79, 0.08);
+}
+html[data-theme="mecha"][data-mecha-variant="light"] .selection-dock .btn.primary {
+  color: #fbf9f2;
+  background: #30352f;
+  border-color: #30352f;
+  text-shadow: none;
+}
+html[data-theme="mecha"][data-mecha-variant="light"] .selection-dock .btn.primary:hover {
+  background: #3c423a;
+  border-color: #3c423a;
+}
 
 /* lists / scheduler / modal */
 html[data-theme="mecha"][data-mecha-variant="light"] .list-head,
