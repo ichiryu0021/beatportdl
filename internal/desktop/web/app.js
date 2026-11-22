@@ -1710,8 +1710,8 @@
     const btn = e.target.closest('[data-genre-tab]');
     if (!btn) return;
     S.discover.genreTab = btn.dataset.genreTab === 'subgenre' ? 'subgenre' : 'genre';
+    renderGenreList();
     if (S.discover.genreTab === 'subgenre') loadSubgenres();
-    else renderGenreList();
     $('#genre-search')?.focus();
   });
 
