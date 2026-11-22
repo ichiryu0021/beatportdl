@@ -444,6 +444,18 @@ html[data-theme="mecha"] .count-pill {
   font: 9px var(--mono);
   letter-spacing: 0.08em;
 }
+html[data-theme="mecha"] .speed-pill {
+  gap: 7px;
+  border-color: var(--line-strong);
+  background: rgba(233, 199, 74, 0.04);
+}
+html[data-theme="mecha"] .speed-pill strong {
+  color: var(--m-signal);
+  font-family: Bahnschrift, "DIN Alternate", "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+html[data-theme="mecha"] .dl-speed { color: var(--m-dim); }
 html[data-theme="mecha"] .update-pill {
   height: 30px;
   padding: 0 10px;
@@ -1183,6 +1195,8 @@ html[data-theme="mecha"][data-mecha-variant="light"] #page-title::before { borde
 html[data-theme="mecha"][data-mecha-variant="light"] #page-subtitle { color: #5b6158; }
 html[data-theme="mecha"][data-mecha-variant="light"] #page-subtitle::before { color: #4f554f; }
 html[data-theme="mecha"][data-mecha-variant="light"] .count-pill { color: #5b6158; border-color: rgba(42, 49, 44, 0.16); }
+html[data-theme="mecha"][data-mecha-variant="light"] .speed-pill strong { color: #10120f; }
+html[data-theme="mecha"][data-mecha-variant="light"] .dl-speed { color: #5b6158; }
 html[data-theme="mecha"][data-mecha-variant="light"] .update-pill { color: #262a24; border-color: rgba(79, 85, 79, 0.45); background: rgba(79, 85, 79, 0.1); }
 html[data-theme="mecha"][data-mecha-variant="light"] .update-pill:hover { background: #b4b6ab; color: #10120f; }
 
@@ -1324,6 +1338,45 @@ html[data-theme="mecha"][data-mecha-variant="light"] .selection-dock .btn.primar
 html[data-theme="mecha"][data-mecha-variant="light"] .selection-dock .btn.primary:hover {
   background: #3c423a;
   border-color: #3c423a;
+}
+
+html[data-theme="mecha"][data-mecha-variant="light"] input[type="date"] {
+  background: #fbf9f2;
+  border-color: rgba(42, 49, 44, 0.24);
+  color: #10120f;
+  color-scheme: light;
+}
+html[data-theme="mecha"][data-mecha-variant="light"] input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: none;
+  opacity: 0.55;
+}
+
+html[data-theme="mecha"][data-mecha-variant="light"] .dl-bulk {
+  background: #eceadf;
+  border-bottom-color: rgba(42, 49, 44, 0.18);
+}
+html[data-theme="mecha"][data-mecha-variant="light"] .dl-bulk-count { color: #4f554f; }
+html[data-theme="mecha"][data-mecha-variant="light"] .dl-bulk-count strong { color: #10120f; }
+html[data-theme="mecha"][data-mecha-variant="light"] .dl-bulk .btn.ghost {
+  color: #2d322c;
+  border-color: rgba(42, 49, 44, 0.22);
+  background: #f8f6ef;
+  text-shadow: none;
+}
+html[data-theme="mecha"][data-mecha-variant="light"] .dl-bulk .btn.ghost:hover {
+  color: #10120f;
+  border-color: rgba(42, 49, 44, 0.4);
+  background: rgba(79, 85, 79, 0.08);
+}
+html[data-theme="mecha"][data-mecha-variant="light"] .dl-bulk .btn.danger-ghost {
+  color: #9c3e3e;
+  border-color: rgba(156, 62, 62, 0.32);
+  background: #f8f6ef;
+  text-shadow: none;
+}
+html[data-theme="mecha"][data-mecha-variant="light"] .dl-bulk .btn.danger-ghost:hover {
+  color: #7f2f2f;
+  background: rgba(156, 62, 62, 0.08);
 }
 
 /* lists / scheduler / modal */

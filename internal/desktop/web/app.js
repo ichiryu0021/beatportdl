@@ -33,6 +33,11 @@
     return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
   }
 
+  function fmtSpeed(n) {
+    const value = Number(n) || 0;
+    return value > 0 ? `${fmtBytes(value)}/s` : '0 B/s';
+  }
+
   function hashString(s) {
     let h = 2166136261;
     for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -819,7 +824,7 @@
     discover: ['发现最新', '从 Beatport 曲库按曲风与日期发现新歌'],
     search: ['搜索', '搜索曲目、专辑与厂牌，或直接粘贴 Beatport 链接'],
     scheduler: ['定时任务', '按固定间隔自动扫描最新发布并加入下载'],
-    downloads: ['下载队列', '实时进度、失败原因与本地文件位置'],
+    downloads: ['下载队列', ''],
     settings: ['设置', '音频格式、命名方式、目录、账号与更新'],
   };
 
@@ -856,7 +861,9 @@
   function updatePageHead() {
     const [title, subtitle] = PAGE_META[S.view] || PAGE_META.discover;
     $('#page-title').textContent = title;
-    $('#page-subtitle').textContent = subtitle;
+    const subtitleEl = $('#page-subtitle');
+    subtitleEl.textContent = subtitle;
+    subtitleEl.hidden = !subtitle;
     const actions = $('#topbar-actions');
     if (!actions) return;
     // Rebuilding the toolbar on every 70 ms progress batch would thrash the
@@ -864,10 +871,9 @@
     let sig = S.view;
     let html = '';
     if (S.view === 'downloads') {
-      const active = activeDownloadCount();
-      const openTasks = openTaskCount();
-      sig += `|${active}|${openTasks}|${S.downloads.pausedAll ? 1 : 0}`;
-      html = `<span class="count-pill">${S.downloads.pausedAll ? '队列已暂停' : (active ? `${active} 首进行中` : (openTasks ? `${openTasks} 首排队` : '空闲'))}</span>`;
+      const speed = totalDownloadSpeed();
+      sig += `|${Math.round(speed)}`;
+      html = `<span class="count-pill speed-pill" title="当前所有任务的总下载速度"><span class="speed-label">DL</span><strong>${escHtml(fmtSpeed(speed))}</strong></span>`;
     } else if (S.view === 'settings') {
       sig += `|${(S.hello && S.hello.appVersion) || ''}`;
       html = `<span class="count-pill">v${escHtml((S.hello && S.hello.appVersion) || '1.0.0')}</span>`;
@@ -1197,7 +1203,25 @@
     if (!bar) return;
     bar.addEventListener('mousedown', (e) => {
       if (e.button !== 0 || e.target.closest('.win-actions')) return;
-      host('windowDrag').catch(() => {});
+      const startX = e.clientX;
+      const startY = e.clientY;
+      let started = false;
+      const cleanup = () => {
+        document.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('blur', onUp);
+      };
+      const onMove = (ev) => {
+        if (started) return;
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
+        started = true;
+        cleanup();
+        host('windowDrag').catch(() => {});
+      };
+      const onUp = () => cleanup();
+      document.addEventListener('mousemove', onMove, { passive: true });
+      window.addEventListener('mouseup', onUp, { once: true });
+      window.addEventListener('blur', onUp, { once: true });
     });
     bar.addEventListener('dblclick', (e) => {
       if (e.target.closest('.win-actions')) return;
@@ -2057,6 +2081,14 @@
     return n;
   }
 
+  function totalDownloadSpeed() {
+    let speed = 0;
+    S.downloads.map.forEach((r) => {
+      if (r.status === 'downloading') speed += Number(r.speed) || 0;
+    });
+    return speed;
+  }
+
   function openTaskCount() {
     let n = 0;
     S.downloads.map.forEach((r) => { if (isNonTerminal(r)) n++; });
@@ -2288,7 +2320,7 @@
         : { cls: 'queued', text: '排队中' };
       case 'paused': return { cls: 'paused', text: '已暂停' };
       case 'queued': return { cls: 'queued', text: '正在开始' };
-      case 'downloading': return { cls: 'downloading', text: row.percent > 0 ? `下载中 ${row.percent}%` : '下载中' };
+      case 'downloading': return { cls: 'downloading', text: '下载中' };
       case 'done': return { cls: 'done', text: '已完成' };
       case 'error': return { cls: 'error', text: '失败' };
       case 'stopped': return { cls: 'stopped', text: '已停止' };
@@ -2302,22 +2334,6 @@
     const selected = S.downloads.selected.has(row.url);
     const percent = clamp(Number(row.percent) || 0, 0, 100);
     const title = row.title || row.url;
-    const cover = row.url || title;
-    const sub = row.status === 'done'
-      ? (row.path || '已写入本地')
-      : row.status === 'error'
-        ? (row.error || '未知错误')
-        : row.status === 'stopped'
-          ? '已手动停止'
-          : row.status === 'skipped'
-            ? (row.detail || (row.reason === 'duplicate' ? '已在下载队列中' : '本地文件已存在'))
-            : row.status === 'downloading'
-              ? (row.total ? `${fmtBytes(row.received)} / ${fmtBytes(row.total)}` : '正在建立连接…')
-              : row.status === 'queued'
-                ? '正在提交给后端…'
-                : row.status === 'paused'
-                  ? '已暂停，点击继续恢复'
-                  : '等待提交…';
     const barState = row.status === 'done'
       ? { cls: 'progress-bar done', width: '100%' }
       : row.status === 'error' || row.status === 'stopped'
@@ -2327,18 +2343,8 @@
           : row.status === 'downloading' && !row.total
             ? { cls: 'progress-bar indeterminate', width: '' }
             : { cls: 'progress-bar', width: `${Math.max(percent, row.status === 'downloading' ? 3 : 0)}%` };
-    const leftLabel = row.status === 'done'
-      ? '完成'
-      : row.status === 'error'
-        ? '中断'
-        : row.status === 'stopped'
-          ? '停止'
-          : row.status === 'skipped'
-            ? '跳过'
-            : `${percent}%`;
-    const rightLabel = row.status === 'downloading'
-      ? (row.speed ? `${fmtBytes(row.speed)}/s` : '')
-      : (row.status === 'done' && row.total ? fmtBytes(row.total) : '');
+    const percentLabel = `${percent}%`;
+    const speedText = row.status === 'downloading' ? fmtSpeed(row.speed) : '';
 
     // Progress events arrive every ~70 ms. Once a row is built, only its
     // dynamic fields are patched: recreating the progress bar would restart the
@@ -2347,13 +2353,12 @@
       && node.dataset.pstatus === row.status && node.dataset.ptitle === title
       && node.dataset.psel === (selected ? '1' : '0');
     if (canPatch) {
-      const em = node.querySelector('.dl-title em');
-      if (em) { em.textContent = sub; em.title = sub; }
       const bar = node.querySelector('.progress-bar');
       if (bar) { bar.className = barState.cls; bar.style.width = barState.width; }
-      const labels = node.querySelectorAll('.progress-label span');
-      if (labels[0]) labels[0].textContent = leftLabel;
-      if (labels[1]) labels[1].textContent = rightLabel;
+      const label = node.querySelector('.dl-percent');
+      if (label) label.textContent = percentLabel;
+      const speed = node.querySelector('.dl-speed');
+      if (speed) speed.textContent = speedText;
       const chip = node.querySelector('.chip-status');
       if (chip) {
         chip.className = `chip-status ${meta.cls}`;
@@ -2365,14 +2370,12 @@
     const progressHtml = `<div class="progress-track"><div class="${barState.cls}"${barState.width ? ` style="width:${barState.width}"` : ''}></div></div>`;
     node.innerHTML = `
       <span class="cell-cb">${checkboxHtml(selected)}</span>
-      <span class="cover" style="${coverStyle(cover)}"><span class="cover-letter">${escHtml(coverLetter(title))}</span></span>
       <span class="dl-title">
-        <strong>${escHtml(title)}</strong>
-        <em title="${escHtml(sub)}">${escHtml(sub)}</em>
+        <strong title="${escHtml(title)}">${escHtml(title)}</strong>
       </span>
       <span class="dl-progress">
         ${progressHtml}
-        <span class="progress-label"><span>${escHtml(leftLabel)}</span><span>${escHtml(rightLabel)}</span></span>
+        <span class="progress-label"><span class="dl-percent">${escHtml(percentLabel)}</span><span class="dl-speed">${escHtml(speedText)}</span></span>
       </span>
       <span class="dl-status">
         <span class="chip-status ${meta.cls}"><span class="dot"></span>${escHtml(meta.text)}</span>
@@ -2610,7 +2613,16 @@
       if (btn) {
         e.stopPropagation();
         if (btn.dataset.act === 'reveal') {
-          host('revealPath', { path: row.path }).catch((err) => toast(err.message, 'error'));
+          host('revealPath', { path: row.path, size: Number(row.total) || 0 })
+            .then((res) => {
+              if (res && res.path && res.path !== row.path) {
+                row.path = res.path;
+                persistDownloads();
+                markDirty('downloads');
+                window.__vl?.downloads?.refresh();
+              }
+            })
+            .catch((err) => toast(err.message, 'error'));
         } else if (btn.dataset.act === 'retry') {
           S.downloads.map.delete(row.url);
           enqueueUrls([row.url], { [row.url]: row.title });
@@ -2697,7 +2709,7 @@
       scroll: $('#download-scroll'),
       spacer: $('#download-spacer'),
       rows,
-      rowHeight: 76,
+      rowHeight: 42,
       renderRow: renderDownloadRow,
     });
   }

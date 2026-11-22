@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -277,6 +278,30 @@ func workArea() rect {
 	return r
 }
 
+func rectHasUsableArea(r rect) bool {
+	if r.Right <= r.Left || r.Bottom <= r.Top {
+		return false
+	}
+	wa := workArea()
+	left := r.Left
+	if left < wa.Left {
+		left = wa.Left
+	}
+	top := r.Top
+	if top < wa.Top {
+		top = wa.Top
+	}
+	right := r.Right
+	if right > wa.Right {
+		right = wa.Right
+	}
+	bottom := r.Bottom
+	if bottom > wa.Bottom {
+		bottom = wa.Bottom
+	}
+	return right-left >= 120 && bottom-top >= 80
+}
+
 func adjustWindowRect(r *rect, dpi uint32) {
 	if ok, _, _ := procAdjustWindowRectExForDpi.Call(
 		uintptr(unsafe.Pointer(r)),
@@ -435,6 +460,16 @@ func (w *Window) applyDarkFrame() {
 // Show makes the window visible (respecting the remembered maximized state)
 // and brings it to the foreground.
 func (w *Window) Show() {
+	if w.state.Valid && !rectHasUsableArea(rect{
+		Left: w.state.X, Top: w.state.Y,
+		Right: w.state.X + w.state.W, Bottom: w.state.Y + w.state.H,
+	}) {
+		// A monitor was removed or a previous automated resize left the saved
+		// normal rect off-screen. Fall back to the default window position
+		// instead of restoring an invisible maximized window.
+		w.state.Valid = false
+		w.state.Maximized = false
+	}
 	if w.state.Valid && w.state.Maximized {
 		_, _, _ = procShowWindow.Call(w.hwnd, SWShowNormal)
 		w.normalRect = rect{w.state.X, w.state.Y, w.state.X + w.state.W, w.state.Y + w.state.H}
@@ -460,9 +495,119 @@ func (w *Window) Close() {
 // marshalled to the UI thread because WM_NCLBUTTONDOWN enters a modal move loop.
 func (w *Window) StartDrag() {
 	w.Post(func() {
+		if w.maximized && !w.waitForDragMove() {
+			return
+		}
 		_, _, _ = procReleaseCapture.Call()
 		_, _, _ = procSendMessageW.Call(w.hwnd, WMNCLButtonDown, HTCAPTION, 0)
 	})
+}
+
+func (w *Window) waitForDragMove() bool {
+	var start point
+	if ok, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(&start))); ok == 0 {
+		return false
+	}
+	for i := 0; i < 80; i++ {
+		time.Sleep(10 * time.Millisecond)
+		down, _, _ := procGetAsyncKeyState.Call(0x01) // VK_LBUTTON
+		if uint16(down)&0x8000 == 0 {
+			return false
+		}
+		var current point
+		if ok, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(&current))); ok == 0 {
+			continue
+		}
+		if abs32(current.X-start.X) >= 4 || abs32(current.Y-start.Y) >= 4 {
+			w.restoreForDrag()
+			return true
+		}
+	}
+	return false
+}
+
+func abs32(v int32) int32 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+func (w *Window) restoreForDrag() {
+	var cursor point
+	if ok, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(&cursor))); ok == 0 {
+		return
+	}
+	var maximizedRect rect
+	if ok, _, _ := procGetWindowRect.Call(w.hwnd, uintptr(unsafe.Pointer(&maximizedRect))); ok == 0 {
+		return
+	}
+	normal := w.normalRect
+	wa := workArea()
+	if !rectHasUsableArea(normal) {
+		width := w.options.Width
+		height := w.options.Height
+		if width <= 0 {
+			width = 1200
+		}
+		if height <= 0 {
+			height = 800
+		}
+		left := wa.Left + (wa.Right-wa.Left-int32(width))/2
+		top := wa.Top + (wa.Bottom-wa.Top-int32(height))/2
+		normal = rect{left, top, left + int32(width), top + int32(height)}
+	}
+	width := normal.Right - normal.Left
+	height := normal.Bottom - normal.Top
+	if width <= 0 || height <= 0 {
+		return
+	}
+	if width > wa.Right-wa.Left {
+		width = wa.Right - wa.Left
+	}
+	if height > wa.Bottom-wa.Top {
+		height = wa.Bottom - wa.Top
+	}
+	maxWidth := maximizedRect.Right - maximizedRect.Left
+	fractionX := 0.5
+	if maxWidth > 0 {
+		fractionX = float64(cursor.X-maximizedRect.Left) / float64(maxWidth)
+	}
+	if fractionX < 0 {
+		fractionX = 0
+	}
+	if fractionX > 1 {
+		fractionX = 1
+	}
+	left := cursor.X - int32(float64(width)*fractionX)
+	grabY := cursor.Y - maximizedRect.Top
+	if grabY < 8 {
+		grabY = 8
+	}
+	if grabY > 38 {
+		grabY = 38
+	}
+	top := cursor.Y - grabY
+	if left < wa.Left {
+		left = wa.Left
+	}
+	if left+width > wa.Right {
+		left = wa.Right - width
+	}
+	if top < wa.Top {
+		top = wa.Top
+	}
+	if top+height > wa.Bottom {
+		top = wa.Bottom - height
+	}
+	_, _, _ = procSetWindowPos.Call(
+		w.hwnd, 0,
+		uintptr(left), uintptr(top),
+		uintptr(width), uintptr(height),
+		SWPNoZOrder,
+	)
+	w.maximized = false
+	w.normalRect = rect{left, top, left + width, top + height}
 }
 
 // SetAppearance switches the native frame between the dark and paper themes.

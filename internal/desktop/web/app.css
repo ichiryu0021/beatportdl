@@ -457,6 +457,22 @@ input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cur
   color: var(--text-2); font-size: 11.5px;
   white-space: nowrap;
 }
+.speed-pill { gap: 6px; }
+.speed-pill .speed-label {
+  color: var(--text-3);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+}
+.speed-pill strong {
+  color: var(--text);
+  font-family: Bahnschrift, "DIN Alternate", "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 
 kbd {
   padding: 3px 7px;
@@ -836,12 +852,12 @@ kbd {
 
 .dl-row {
   position: absolute; left: 0; right: 0;
-  height: 76px;
+  height: 42px;
   display: grid;
-  grid-template-columns: 42px 44px minmax(0, 1fr) 260px 168px;
+  grid-template-columns: 36px minmax(0, 1fr) 250px 168px;
   align-items: center;
-  gap: 14px;
-  padding: 0 16px;
+  gap: 10px;
+  padding: 0 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.035);
   cursor: pointer;
   transition: background 0.12s var(--ease);
@@ -855,11 +871,11 @@ kbd {
 
 .dl-head {
   display: grid;
-  grid-template-columns: 42px 44px minmax(0, 1fr) 260px 168px;
+  grid-template-columns: 36px minmax(0, 1fr) 250px 168px;
   align-items: center;
-  gap: 14px;
-  height: 38px;
-  padding: 0 16px;
+  gap: 10px;
+  height: 30px;
+  padding: 0 14px;
   flex: 0 0 auto;
   border-bottom: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.015);
@@ -878,17 +894,27 @@ kbd {
 }
 .dl-bulk-count { color: var(--text-2); font-size: 12px; }
 .dl-bulk-count strong { color: var(--accent); font-size: 14px; font-variant-numeric: tabular-nums; }
-.dl-title { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.dl-title strong { font-size: 13px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dl-title em { font-style: normal; color: var(--text-3); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dl-progress { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
-.progress-track { height: 6px; border-radius: 99px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
-.progress-bar { height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, #01e887, #6bffc5); transition: width 0.25s linear; box-shadow: 0 0 12px rgba(1, 255, 149, 0.35); }
+.dl-title { display: flex; flex-direction: column; min-width: 0; }
+.dl-title strong { font-size: 12.5px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-title em { display: none; }
+.dl-progress { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.progress-track { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
+.progress-bar { height: 100%; width: 0; border-radius: 2px; background: linear-gradient(90deg, #01e887, #6bffc5); transition: width 0.25s linear; box-shadow: 0 0 12px rgba(1, 255, 149, 0.35); }
 .progress-bar.error { background: linear-gradient(90deg, #ff5c7a, #ff8fa3); box-shadow: none; }
 .progress-bar.done { background: linear-gradient(90deg, #0bbf7a, #01ff95); }
 .progress-bar.indeterminate { width: 35% !important; animation: indet 1.15s infinite linear; }
 @keyframes indet { 0% { transform: translateX(-110%); } 100% { transform: translateX(320%); } }
-.progress-label { display: flex; justify-content: space-between; gap: 8px; color: var(--text-3); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.progress-label { display: flex; justify-content: flex-end; align-items: baseline; gap: 8px; color: var(--text-3); font-size: 9.5px; line-height: 1; font-variant-numeric: tabular-nums; }
+.dl-percent { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.dl-speed {
+  color: var(--text-3);
+  font-family: Bahnschrift, "DIN Alternate", "Cascadia Mono", Consolas, monospace;
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.dl-speed:empty { display: none; }
 .dl-status { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
 .dl-status .cell-actions { display: flex; gap: 3px; }
 .chip-status {
@@ -1071,7 +1097,7 @@ kbd {
   .topbar { padding: 16px 20px 10px; }
   .filter-grid { grid-template-columns: 220px 200px 1fr; gap: 12px; }
   .list-head, .row { grid-template-columns: 42px 40px minmax(0, 1fr) 170px 120px 80px; }
-  .dl-head, .dl-row { grid-template-columns: 40px 40px minmax(0, 1fr) 200px 150px; gap: 12px; }
+  .dl-head, .dl-row { grid-template-columns: 32px minmax(0, 1fr) 200px 150px; gap: 10px; }
   .settings-grid { grid-template-columns: 1fr; }
 }
 

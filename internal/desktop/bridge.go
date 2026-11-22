@@ -36,6 +36,7 @@ type inboundMessage struct {
 	URL     string          `json:"url"`
 	Title   string          `json:"title"`
 	Path    string          `json:"path"`
+	Size    int64           `json:"size"`
 	Level   string          `json:"level"`
 	Message string          `json:"message"`
 	Proxy   string          `json:"proxy"`
@@ -379,11 +380,12 @@ func (b *bridge) handleHost(msg inboundMessage) {
 		}
 		b.reply(msg.ID, "host", map[string]any{"ok": true}, nil)
 	case "revealPath":
-		if err := b.reveal(msg.Path); err != nil {
+		actual, err := b.reveal(msg.Path, msg.Size)
+		if err != nil {
 			b.reply(msg.ID, "host", nil, err)
 			return
 		}
-		b.reply(msg.ID, "host", map[string]any{"ok": true}, nil)
+		b.reply(msg.ID, "host", map[string]any{"ok": true, "path": actual}, nil)
 	case "openLogs":
 		_ = winui.ShellOpen(b.paths.LogsDir)
 		b.reply(msg.ID, "host", map[string]any{"ok": true}, nil)
@@ -543,15 +545,92 @@ func (b *bridge) openTarget(target string, external bool) error {
 	return winui.ShellOpen(abs)
 }
 
-func (b *bridge) reveal(path string) error {
-	abs, err := filepath.Abs(strings.TrimSpace(path))
+func (b *bridge) reveal(path string, size int64) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "", fmt.Errorf("路径为空")
+	}
+	abs, err := filepath.Abs(path)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if _, err := os.Stat(abs); err != nil {
-		return fmt.Errorf("路径不存在: %s", abs)
+	if _, err := os.Stat(abs); err == nil {
+		return abs, winui.RevealInExplorer(abs)
 	}
-	return winui.RevealInExplorer(abs)
+	root := filepath.Dir(abs)
+	if _, err := os.Stat(root); err != nil {
+		return "", fmt.Errorf("下载目录不存在: %s", root)
+	}
+
+	wanted := filepath.Base(abs)
+	wantedNorm := normalizeFileName(wanted)
+	exact := ""
+	sizeMatch := ""
+	var sizeMod time.Time
+	fuzzy := ""
+	fuzzyDist := 4
+	_ = filepath.Walk(root, func(p string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil || info == nil || info.IsDir() {
+			return nil
+		}
+		if exact == "" && strings.EqualFold(info.Name(), wanted) {
+			exact = p
+			return nil
+		}
+		if size > 0 && info.Size() == size && (sizeMatch == "" || info.ModTime().After(sizeMod)) {
+			sizeMatch = p
+			sizeMod = info.ModTime()
+			return nil
+		}
+		if dist := editDistance(normalizeFileName(info.Name()), wantedNorm); dist < fuzzyDist {
+			fuzzy = p
+			fuzzyDist = dist
+		}
+		return nil
+	})
+	for _, candidate := range []string{exact, sizeMatch, fuzzy} {
+		if candidate == "" {
+			continue
+		}
+		if err := winui.RevealInExplorer(candidate); err != nil {
+			return "", err
+		}
+		return candidate, nil
+	}
+	// The file was moved or removed after the download; show the library folder
+	// instead of surfacing a stale absolute path as an error.
+	return "", winui.ShellOpen(root)
+}
+
+func normalizeFileName(name string) string {
+	name = strings.ToLower(name)
+	return strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return -1
+	}, name)
+}
+
+func editDistance(a, b string) int {
+	ar, br := []rune(a), []rune(b)
+	prev := make([]int, len(br)+1)
+	cur := make([]int, len(br)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(ar); i++ {
+		cur[0] = i
+		for j := 1; j <= len(br); j++ {
+			cost := 1
+			if ar[i-1] == br[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+		}
+		prev, cur = cur, prev
+	}
+	return prev[len(br)]
 }
 
 func (b *bridge) restartBackend(id *int64) {

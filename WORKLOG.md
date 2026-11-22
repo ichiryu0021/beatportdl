@@ -510,3 +510,14 @@ go build -trimpath -ldflags "-H windowsgui -s -w" -o bin\bpdl-ui.exe .\cmd\bpdl-
   不含配置、凭据、`data/`、`logs/`；本地清洁打包保留这些用户文件。
 - 本版包含：发现页专辑类型可用（修复 releases API 的 streaming 参数）、
   白灰主题曲风页签选中态、选择浮条白灰样式与更小主按钮、勾选符号 1px 对齐。
+
+## 26. v1.1.6 发布
+
+- 窗口：最大化状态拖动标题栏自动还原为普通窗口；修复离屏窗口状态导致的
+  最大化/还原/缩放失效。
+- 文件夹按钮改用 Shell API（SHParseDisplayName + SHOpenFolderAndSelectItems），
+  不再错误打开「文档」，并支持曲风子目录和标签改名后的路径回退。
+- 下载页改为 42px 矮行：仅文件名、进度条、百分比、速度、状态、文件夹/浏览器。
+- 下载页顶部显示总下载速度，行内百分比旁显示当前任务速度，使用机能风数字样式。
+- 删除下载页副标题。
+- 干净打包：release 资产不含配置、凭据、data、logs。

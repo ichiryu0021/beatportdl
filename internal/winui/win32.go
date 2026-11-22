@@ -40,6 +40,8 @@ var (
 	procMessageBoxW               = user32.NewProc("MessageBoxW")
 	procSetWindowPos              = user32.NewProc("SetWindowPos")
 	procGetWindowRect             = user32.NewProc("GetWindowRect")
+	procGetCursorPos              = user32.NewProc("GetCursorPos")
+	procGetAsyncKeyState          = user32.NewProc("GetAsyncKeyState")
 	procGetClientRect             = user32.NewProc("GetClientRect")
 	procGetWindowDC               = user32.NewProc("GetWindowDC")
 	procReleaseDC                 = user32.NewProc("ReleaseDC")

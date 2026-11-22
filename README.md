@@ -1,6 +1,6 @@
 # BeatportDL · WebView2 桌面版
 
-**v1.1.5** · Windows 10/11 x64 便携版 · Chromium / WebView2 界面 · 下载队列控制 · 代理 · 曲风分类 · GitHub 自动更新
+**v1.1.6** · Windows 10/11 x64 便携版 · Chromium / WebView2 界面 · 下载队列控制 · 代理 · 曲风分类 · GitHub 自动更新
 
 > 版本号规则：以后只递增最后一位（`1.1.0 → 1.1.1 → 1.1.2`），不自动跳 minor/major。
 
@@ -14,8 +14,8 @@ Beatport & Beatsource downloader (FLAC, AAC)
 
 从 [最新 Release](https://github.com/ichiryu0021/beatportdl/releases/latest) 下载：
 
-- `bpdl-v1.1.5-full.zip` — 完整便携包（主程序 + 后端 + 运行库），推荐新用户。
-- `bpdl-hotfix-v1.1.5.zip` — 最小更新包，供已有 v1.1.0 之后文件结构的客户端使用。
+- `bpdl-v1.1.6-full.zip` — 完整便携包（主程序 + 后端 + 运行库），推荐新用户。
+- `bpdl-hotfix-v1.1.6.zip` — 最小更新包，供已有 v1.1.0 之后文件结构的客户端使用。
 
 解压到普通文件夹后运行 `启动.bat` 或 `beatportdl_gui.exe`。便携包**不包含**账号、配置、`data/` 或 `logs/`，首次运行按提示登录。
 
